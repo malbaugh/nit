@@ -111,21 +111,10 @@ export function AskAnnotation() {
         className="max-w-[780px] overflow-hidden rounded-card bg-surface shadow-[0_0_0_1px_color-mix(in_oklch,var(--accent)_45%,transparent),0_2px_8px_oklch(0_0_0/0.08)]"
       >
         <header className="flex h-9 items-center gap-2 px-3 text-[12px]">
-          <Sparks width={13} height={13} className="text-accent-ink" />
-          <span className="font-medium text-ink">Ask Claude</span>
-          <span className="text-ink-3">{where}</span>
-          {running ? (
-            <span className="ml-1 flex min-w-0 items-center gap-1.5 text-ink-3">
-              <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-line-strong border-t-accent" />
-              <span className="truncate">
-                {lastTool?.kind === "tool"
-                  ? `${TOOL_VERB[lastTool.tool] ?? lastTool.tool} ${lastTool.target}`.trim()
-                  : "Thinking"}
-                …
-              </span>
-            </span>
-          ) : null}
-          <span className="ml-auto flex items-center gap-1">
+          <Sparks width={13} height={13} className="shrink-0 text-accent-ink" />
+          <span className="shrink-0 font-medium whitespace-nowrap text-ink">Ask Claude</span>
+          <span className="min-w-0 truncate whitespace-nowrap text-ink-3">{where}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1">
             {thread && !running ? (
               <IconButton
                 label="Delete this conversation"
@@ -155,6 +144,18 @@ export function AskAnnotation() {
               <Turn key={t.at} question={t.question} answer={t.answer} />
             ))}
             {live ? <Turn question={live.question ?? ""} answer={live.answer} streaming={running} /> : null}
+            {running ? (
+              // What Claude is doing right now, under the answer it's writing.
+              <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-3">
+                <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-line-strong border-t-accent" />
+                <span className="truncate">
+                  {lastTool?.kind === "tool"
+                    ? `${TOOL_VERB[lastTool.tool] ?? lastTool.tool} ${lastTool.target}`.trim()
+                    : "Thinking"}
+                  …
+                </span>
+              </p>
+            ) : null}
             {live?.state === "failed" ? (
               <p className="mt-1 text-[12.5px] text-red">{live.error ?? "Claude couldn't answer."}</p>
             ) : null}
