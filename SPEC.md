@@ -160,12 +160,27 @@ cleanup stays with that tool (`crbn remove`, `crbn prune`).
 
 ### Config
 
-Config is read in this order, later entries winning:
+Config is read in this order, later entries winning, one command at a time
+(built, in `src/config.ts`):
 
-1. `~/.config/nit/config.toml` (yours, every repo)
-2. `.nit.toml` at the repo root (shared with the team, committed)
-3. `.nit.local.toml` (yours, this repo, git-ignored)
-4. `NIT_*` environment variables, for example `NIT_COMMANDS_EDITOR`
+1. `~/.config/nit/config.toml` (yours, every repo; `$XDG_CONFIG_HOME` is respected)
+2. `.nit.toml` on the repo's default branch (shared with the team, committed)
+3. `.nit.local.toml` in your checkout (yours, this repo, git-ignored). nit refuses it
+   if git tracks it: a PR could otherwise commit one and run a command on your machine.
+4. `NIT_COMMANDS_<NAME>` environment variables, for example `NIT_COMMANDS_CHECKOUT`
+
+So a tool other than crbn needs no repo change: put it in your own config,
+
+```toml
+# ~/.config/nit/config.toml
+[commands]
+checkout = 'wt checkout "$NIT_BRANCH" --print-path'
+```
+
+and a repo that sets its own `checkout` still wins for that repo, unless you
+override it in `.nit.local.toml` or for one run with `NIT_COMMANDS_CHECKOUT`.
+nit says which layer it used. A malformed or unknown entry is skipped with a
+warning, never fatal. The `editor` command is read but not used yet: `o` comes later.
 
 **Repo config is read from the base branch, never from the branch under
 review.** Otherwise a PR could change `.nit.toml` and run any command on the

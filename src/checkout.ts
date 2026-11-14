@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { $ } from "bun";
 import { Octokit } from "octokit";
+import { loadCommands } from "./config";
 import { parseRemote, token } from "./github";
 import * as term from "./term";
 
@@ -23,24 +24,11 @@ const slug = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-/** Repo config is read from the default branch on origin, never from the branch under review. */
-async function repoConfig(root: string): Promise<{ commands?: { checkout?: string } }> {
-  const head = (await out($`git symbolic-ref --short refs/remotes/origin/HEAD`.cwd(root))) || "origin/main";
-  const text = await $`git show ${`${head}:.nit.toml`}`.cwd(root).nothrow().quiet();
-  if (text.exitCode !== 0) return {};
-  try {
-    return Bun.TOML.parse(text.text()) as { commands?: { checkout?: string } };
-  } catch (e) {
-    term.warn(`ignoring .nit.toml on ${head}: ${e instanceof Error ? e.message : e}`);
-    return {};
-  }
-}
-
 const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
 
 /**
  * Puts a pull request in a worktree and returns where, plus the base to diff against.
- * Uses the repo's `checkout` command if `.nit.toml` sets one (e.g. crbn), else the built-in:
+ * Uses a `checkout` command when any config layer sets one (config.ts), else the built-in:
  * reuse a worktree that already has the PR's branch, or make one beside the main checkout.
  */
 export async function checkoutPr(
@@ -81,16 +69,18 @@ export async function checkoutPr(
     NIT_URL: pr.html_url,
     NIT_REPO_ROOT: root,
   };
-  const command = (await repoConfig(root)).commands?.checkout;
+  const command = (await loadCommands(root)).checkout;
   let path: string | null = null;
 
   if (command) {
     // The plug point: logs on stderr, the directory on the last line of stdout.
-    term.step(`checking out with .nit.toml: ${command}`);
-    const r = await $`sh -c ${command}`.cwd(root).env(env).nothrow();
-    const last = r.stdout.toString().trim().split("\n").at(-1)?.trim() ?? "";
-    if (r.exitCode !== 0 || !isDir(last))
-      throw new Error(`the checkout command didn't print a directory (exit ${r.exitCode})`);
+    term.step(`checking out with ${command.from}: ${command.run}`);
+    // Its log (stderr) streams to the terminal as it works; stdout is the answer, for nit.
+    const proc = Bun.spawn(["sh", "-c", command.run], { cwd: root, env, stdout: "pipe", stderr: "inherit" });
+    const [text, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    const last = text.trim().split("\n").at(-1)?.trim() ?? "";
+    if (code !== 0 || !isDir(last))
+      throw new Error(`the checkout command (${command.from}) didn't print a directory (exit ${code})`);
     path = last;
   } else {
     const worktrees = await out($`git worktree list --porcelain`.cwd(root));
