@@ -77,6 +77,8 @@ export type State = {
   /** The search screen replaces the diff; its query lives in the URL (?search=…). */
   searchOpen: boolean;
   search: { query: string; regex: boolean; caseSensitive: boolean };
+  /** The search text stays marked in the code you open from it, until Esc. */
+  marking: boolean;
   browse: Browse | null;
   /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
   agent: AgentRun | null;
@@ -130,6 +132,7 @@ let state: State = {
   settingsOpen: false,
   searchOpen: false,
   search: { query: "", regex: false, caseSensitive: false },
+  marking: false,
   browse: null,
   agent: null,
   agentActivity: [],

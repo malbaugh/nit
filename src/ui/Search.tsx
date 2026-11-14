@@ -4,6 +4,7 @@ import { GroupedVirtuoso, type GroupedVirtuosoHandle } from "react-virtuoso";
 import type { SearchMatch } from "../types";
 import { api } from "./api";
 import { CodeBlock, langFor } from "./Code";
+import { rangeIn } from "./marks";
 import * as nav from "./nav";
 import * as st from "./state";
 import { basename, dirname, IconButton, Kbd, Tooltip } from "./ui";
@@ -47,26 +48,6 @@ function excerpts(matches: SearchMatch[]) {
     groups.push({ path, count: ms.length, excerpts: all.length - first });
   }
   return { groups, all, flat, excerptOf };
-}
-
-/** A Range over columns a..b of a highlighted line, whose text is split across token spans. */
-function rangeIn(line: Element, a: number, b: number) {
-  const walk = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
-  const r = new Range();
-  let at = 0;
-  let started = false;
-  for (let n = walk.nextNode() as Text | null; n; n = walk.nextNode() as Text | null) {
-    if (!started && a < at + n.length) {
-      r.setStart(n, a - at);
-      started = true;
-    }
-    if (started && b <= at + n.length) {
-      r.setEnd(n, b - at);
-      return r;
-    }
-    at += n.length;
-  }
-  return null;
 }
 
 /**
@@ -235,7 +216,10 @@ export function SearchPane() {
     if (i) requestAnimationFrame(() => list.current?.scrollToIndex({ index: i, align: "center" }));
   }, []);
 
-  const openAt = (path: string, line: number) => nav.openLocation({ path, line });
+  const openAt = (path: string, line: number) => {
+    nav.openLocation({ path, line });
+    st.set({ marking: true });
+  };
   const at = useRef(active);
   at.current = active;
   const move = (d: number) => {

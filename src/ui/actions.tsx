@@ -470,6 +470,7 @@ export function handleKey(e: KeyboardEvent) {
   if (e.key === "Escape") {
     if (s.asking) st.set({ asking: null });
     else if (s.peek) nav.closePeek();
+    else if (s.marking) st.set({ marking: false });
     else if (s.browse) nav.goBack();
     else if (s.view === "agent") st.set({ view: "review" });
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });

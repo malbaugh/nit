@@ -11,6 +11,7 @@ import { ChangesPane } from "./ChangesPane";
 import { DiffPane } from "./DiffPane";
 import { FileList } from "./FileList";
 import { FilePane } from "./FilePane";
+import { useFindMarks } from "./marks";
 import * as nav from "./nav";
 import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
@@ -64,6 +65,7 @@ function App() {
   const browsing = st.useStore((s) => s.browse !== null);
   const view = st.useStore((s) => s.view);
   const searching = st.useStore((s) => s.searchOpen);
+  useFindMarks();
 
   useEffect(() => {
     // The URL says where you were: a reload or a shared link opens there.

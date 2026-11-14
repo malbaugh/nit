@@ -99,7 +99,8 @@ export function revealLine(side: "additions" | "deletions", line: number, tries 
   else if (row.bottom > box.bottom - margin) scroller.scrollTop += row.bottom - (box.bottom - margin);
 }
 
-// Inside Pierre's shadow root: the cursor row, quiet separators, and the comment gutter button.
+// Inside Pierre's shadow root: the cursor row, quiet separators, the comment gutter button, and
+// search marks (ui/marks.ts).
 export const DIFF_CSS = `
 [data-line][data-selected-line] { box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 999px var(--accent-tint); }
 [data-separator-content] { font-family: var(--diffs-header-font-family); font-size: 12px; letter-spacing: -0.005em; color: var(--ink-3); }
@@ -107,6 +108,7 @@ export const DIFF_CSS = `
 @media (hover: hover) { [data-expand-button]:hover { color: var(--ink); background-color: var(--hover-2); } }
 [data-gutter-utility-slot] button { background: var(--accent); color: white; border-radius: 6px; box-shadow: 0 1px 2px oklch(0 0 0 / 0.25); }
 [data-nit-link] { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+::highlight(nit-find) { background-color: color-mix(in oklch, var(--orange) 30%, transparent); }
 `;
 
 /** ⌘ (Ctrl elsewhere) held over a word underlines it, like an editor's go-to-definition link. */
