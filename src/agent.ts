@@ -64,27 +64,12 @@ export function promptFor(drafts: Draft[]) {
   return `Apply these ${drafts.length} review comments.\n\n${items.join("\n\n")}`;
 }
 
-/** What a tool call is about, for the progress list: the file it touches or what it looks for. */
-function targetOf(root: string, input: Record<string, unknown>) {
-  const p = (input.file_path ?? input.path ?? input.pattern ?? "") as string;
-  return isAbsolute(p) ? relative(root, p) || "." : p;
-}
-
-export function createAgent(root: string, snapshots: Snapshots, store: Store) {
-  let current: { run: AgentRun; abort: AbortController; events: AgentEvent[] } | null = null;
-  const listeners = new Set<(e: AgentEvent) => void>();
-  const emit = (e: AgentEvent) => {
-    current?.events.push(e);
-    for (const l of listeners) l(e);
-  };
-  const save = (run: AgentRun) => {
-    store.setAgentRun(run);
-    emit({ type: "run", run });
-  };
-
-  // Every file tool goes through here, whatever settings say: nothing outside the checkout,
-  // nothing in its .git.
-  const confine: HookCallback = async (input) => {
+/**
+ * A PreToolUse hook for every file tool, whatever settings say: nothing outside the checkout,
+ * nothing in its .git. Shared by Apply and Ask.
+ */
+export function confineTo(root: string): HookCallback {
+  return async (input) => {
     if (input.hook_event_name !== "PreToolUse") return {};
     const args = (input.tool_input ?? {}) as Record<string, unknown>;
     for (const key of ["file_path", "path", "notebook_path"]) {
@@ -102,6 +87,27 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
     }
     return {};
   };
+}
+
+/** What a tool call is about, for progress: the file it touches or what it looks for. */
+export function targetOf(root: string, input: Record<string, unknown>) {
+  const p = (input.file_path ?? input.path ?? input.pattern ?? "") as string;
+  return isAbsolute(p) ? relative(root, p) || "." : p;
+}
+
+export function createAgent(root: string, snapshots: Snapshots, store: Store) {
+  let current: { run: AgentRun; abort: AbortController; events: AgentEvent[] } | null = null;
+  const listeners = new Set<(e: AgentEvent) => void>();
+  const emit = (e: AgentEvent) => {
+    current?.events.push(e);
+    for (const l of listeners) l(e);
+  };
+  const save = (run: AgentRun) => {
+    store.setAgentRun(run);
+    emit({ type: "run", run });
+  };
+
+  const confine = confineTo(root);
 
   return {
     /** The run in progress, else the last one for this review. */
