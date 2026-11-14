@@ -189,10 +189,10 @@ export const actions: Action[] = [
   {
     id: "agent-panel",
     group: "Review",
-    label: "Claude's last pass",
-    keys: [],
+    label: "Claude: questions and passes",
+    keys: ["Mod+Shift+i"],
     icon: <Sparks />,
-    when: () => st.get().agent !== null,
+    when: () => st.get().agent !== null || st.get().asks.length > 0 || st.get().job !== null,
     run: () => st.set({ agentOpen: true }),
   },
   {

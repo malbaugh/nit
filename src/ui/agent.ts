@@ -1,5 +1,6 @@
 import { type AgentEvent, type AgentRun, type Job, SIGN_IN_ERROR } from "../types";
 import { api } from "./api";
+import * as nav from "./nav";
 import { needSignIn } from "./SignIn";
 import * as st from "./state";
 
@@ -44,6 +45,8 @@ async function jobFinished(job: Job) {
     return job.kind === "ask" && st.get().asking
       ? undefined
       : st.fail(`Claude couldn't finish: ${job.error ?? "unknown error"}`);
+  // A finished answer is saved with its lines' conversation: reload to show it there.
+  if (job.kind === "ask" && job.state === "done") return void st.load();
   if (job.state === "stopped" || job.kind !== "review") return;
   await st.load(); // the proposals are drafts now
   const dropped = job.dropped.length ? ` · ${job.dropped.length} dropped by checks` : "";
@@ -67,6 +70,13 @@ export async function coreview() {
   }
 }
 
+/** Reopens a conversation from earlier in the review, at its lines. */
+export function reopen(t: { path: string; side: import("../types").Side; start: number; end: number }) {
+  st.set({ agentOpen: false });
+  nav.openLocation({ path: t.path, line: t.end });
+  st.set({ asking: { path: t.path, side: t.side, start: t.start, end: t.end }, peek: null });
+}
+
 /** Opens the ask box on the selected lines (or the cursor's line). */
 export function startAsk() {
   const file = st.currentFile();
@@ -80,11 +90,13 @@ export function startAsk() {
 export async function ask(question: string) {
   const at = st.get().asking;
   if (!at || !question.trim()) return;
+  // A follow-up continues the lines' conversation, even one from earlier in the review.
   const prev = st.get().job;
   const followUp =
-    prev?.kind === "ask" && prev.at && prev.at.path === at.path && prev.at.start === at.start && prev.at.end === at.end
+    st.threadAt(at)?.sessionId ??
+    (prev?.kind === "ask" && prev.at && prev.at.path === at.path && prev.at.start === at.start && prev.at.end === at.end
       ? prev.sessionId
-      : null;
+      : null);
   try {
     const { job } = await api.ask({ ...at, question, followUp });
     st.set({ job, agentActivity: [] });
@@ -93,10 +105,10 @@ export async function ask(question: string) {
   }
 }
 
-/** Turns the answer into your draft comment on the same lines, open to edit. */
-export function commentFromAnswer() {
-  const { asking: at, job } = st.get();
-  if (!at || job?.kind !== "ask" || !job.answer.trim()) return;
+/** Turns an answer into your draft comment on the same lines, open to edit. */
+export function commentFromAnswer(answer: string) {
+  const { asking: at } = st.get();
+  if (!at || !answer.trim()) return;
   st.set({
     anchor: at.start === at.end ? null : { side: at.side, line: at.start },
     cursor: { side: at.side, line: at.end },
@@ -104,7 +116,7 @@ export function commentFromAnswer() {
   });
   st.startComment();
   const id = st.get().editing;
-  if (id) st.updateDraft(id, { body: job.answer.trim() });
+  if (id) st.updateDraft(id, { body: answer.trim() });
 }
 
 /** Accepting makes Claude's proposal your draft: it posts and applies like any other. */

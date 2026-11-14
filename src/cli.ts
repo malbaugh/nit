@@ -27,7 +27,7 @@ import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
 import * as term from "./term";
 import { themeBoot } from "./theme-boot";
-import type { Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
+import type { AskThread, Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
 const uiDir = uiDirFor(dev);
@@ -208,6 +208,7 @@ const serve = (p: number) =>
             patch: await patch(),
             drafts: store.drafts(),
             viewed: store.viewed(),
+            asks: store.asks(),
           };
           return json(data);
         }),
@@ -467,11 +468,37 @@ const serve = (p: number) =>
               at,
               question: b.question,
               resume: typeof b.followUp === "string" && /^[\w-]{8,64}$/.test(b.followUp) ? b.followUp : null,
+              // Kept with the lines' conversation, so it can be read again later in the review.
+              finish: async (_, j) => {
+                if (!j.answer.trim()) return;
+                const same = (t: AskThread) =>
+                  t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end;
+                const t: AskThread = store.asks().find(same) ?? {
+                  id: crypto.randomUUID(),
+                  ...at,
+                  turns: [],
+                  sessionId: null,
+                  updatedAt: 0,
+                };
+                const now = Date.now();
+                store.saveAsk({
+                  ...t,
+                  turns: [...t.turns, { question: b.question as string, answer: j.answer.trim(), at: now }],
+                  sessionId: j.sessionId ?? t.sessionId,
+                  updatedAt: now,
+                });
+              },
             });
             return json({ job });
           } catch (e) {
             return fail(409, e instanceof Error ? e.message : String(e));
           }
+        }),
+      },
+      "/api/asks/:id": {
+        DELETE: guarded((req) => {
+          store.deleteAsk(req.params.id);
+          return json({ ok: true });
         }),
       },
       "/api/agent/stop": {

@@ -2,6 +2,7 @@ import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pie
 import { useSyncExternalStore } from "react";
 import {
   type AgentRun,
+  type AskThread,
   DEFAULT_PREFS,
   type Draft,
   type FileContents,
@@ -87,6 +88,8 @@ export type State = {
   signIn: { retry: (() => void) | null } | null;
   /** Your preferences (the settings screen), saved for every review. */
   prefs: Prefs;
+  /** Conversations with Claude in this review, newest first. */
+  asks: AskThread[];
   browse: Browse | null;
   /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
   agent: AgentRun | null;
@@ -143,6 +146,7 @@ let state: State = {
   search: { query: "", regex: false, caseSensitive: false },
   marking: false,
   signIn: null,
+  asks: [],
   prefs: { ...DEFAULT_PREFS, ...(globalThis as { nitPrefs?: Partial<Prefs> | null }).nitPrefs },
   browse: null,
   agent: null,
@@ -259,6 +263,7 @@ export async function load() {
         current,
         drafts,
         viewed: new Set(data.viewed),
+        asks: data.asks,
         outlines: same ? s.outlines : {}, // changed files re-read their symbols on demand
         error: null,
       };
@@ -430,6 +435,19 @@ export function setPrefs(patch: Partial<Prefs>) {
     () => api.savePrefs(state.prefs).catch(() => fail("Couldn't save your settings. Is nit still running?")),
     300,
   );
+}
+
+/** The conversation about exactly these lines, if there is one. */
+export function threadAt(at: { path: string; side: Side; start: number; end: number } | null) {
+  return at
+    ? state.asks.find((t) => t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end)
+    : undefined;
+}
+
+/** Forgets a conversation with Claude. */
+export function deleteAsk(id: string) {
+  set((s) => ({ asks: s.asks.filter((t) => t.id !== id) }));
+  api.deleteAsk(id).catch(() => fail("Couldn't delete it. Is nit still running?"));
 }
 
 export function notify(message: string, action?: { label: string; run: () => void }) {

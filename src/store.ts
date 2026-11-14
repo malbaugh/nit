@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentRun, Draft, Proposal } from "./types";
+import type { AgentRun, AskThread, Draft, Proposal } from "./types";
 
 export function dataDir() {
   return process.env.NIT_DATA_DIR ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local/share"), "nit");
@@ -89,6 +89,22 @@ export function openStore(review: string) {
     "insert into setting (key, value) values (?, ?) on conflict (key) do update set value = excluded.value",
   );
 
+  // Questions you asked Claude, kept per review.
+  db.run(`create table if not exists ask_thread (
+    review text not null,
+    id text not null,
+    value text not null,
+    updated_at integer not null,
+    primary key (review, id)
+  )`);
+  const listAsks = db.query<{ value: string }, [string]>(
+    "select value from ask_thread where review = ? order by updated_at desc",
+  );
+  const putAsk = db.query(
+    "insert into ask_thread (review, id, value, updated_at) values (?, ?, ?, ?) on conflict (review, id) do update set value = excluded.value, updated_at = excluded.updated_at",
+  );
+  const removeAsk = db.query("delete from ask_thread where review = ? and id = ?");
+
   // The last agent pass for each review (results and undo outlive a restart).
   db.run("create table if not exists agent_run (review text primary key, value text not null)");
   const getRun = db.query<{ value: string }, [string]>("select value from agent_run where review = ?");
@@ -141,6 +157,13 @@ export function openStore(review: string) {
     },
     setSetting: (key: string, value: unknown) => {
       putSetting.run(key, JSON.stringify(value));
+    },
+    asks: (): AskThread[] => listAsks.all(review).map((r) => JSON.parse(r.value) as AskThread),
+    saveAsk: (t: AskThread) => {
+      putAsk.run(review, t.id, JSON.stringify(t), t.updatedAt);
+    },
+    deleteAsk: (id: string) => {
+      removeAsk.run(review, id);
     },
     viewed: () => listViewed.all(review).map((r) => r.path),
     setViewed: (path: string, viewed: boolean) => {

@@ -40,6 +40,20 @@ export type ReviewData = {
   patch: string;
   drafts: Draft[];
   viewed: string[];
+  asks: AskThread[];
+};
+
+/** A conversation with Claude about some lines, kept for the review so you can come back to it. */
+export type AskThread = {
+  id: string;
+  path: string;
+  side: Side;
+  start: number;
+  end: number;
+  turns: { question: string; answer: string; at: number }[];
+  /** Claude's session, so a follow-up continues the same conversation. */
+  sessionId: string | null;
+  updatedAt: number;
 };
 
 export type FileContents = { old: string | null; new: string | null };

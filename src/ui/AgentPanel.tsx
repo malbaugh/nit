@@ -114,6 +114,7 @@ export function AgentPanel() {
   const activity = st.useStore((s) => s.agentActivity);
   const drafts = st.useStore((s) => s.drafts);
   const job = st.useStore((s) => s.job);
+  const asks = st.useStore((s) => s.asks);
   const running = run?.state === "running" || job?.state === "running";
 
   return (
@@ -129,7 +130,7 @@ export function AgentPanel() {
               <div className="min-w-0 flex-1">
                 <Sheet.Title className="text-[14px] font-medium text-ink">Claude</Sheet.Title>
                 <Sheet.Description className="truncate text-[12px] text-ink-3 tabular-nums">
-                  {run ? summary(run) : "Applies your comments to the code"}
+                  {run ? summary(run) : "Your questions, co-review and applied comments"}
                 </Sheet.Description>
               </div>
               <Kbd k="Esc" quiet />
@@ -142,6 +143,24 @@ export function AgentPanel() {
               <Scroll.View className="h-full w-full">
                 <Scroll.Content className="box-border w-full min-w-0 p-2">
                   {job?.kind === "review" ? <CoReviewSummary job={job} /> : null}
+                  {asks.length ? (
+                    <Section title="Questions">
+                      {asks.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => agent.reopen(t)}
+                          className="flex w-full min-w-0 flex-col gap-0.5 rounded-control px-2 py-1.5 text-left transition-[background-color] duration-100 [@media(hover:hover)]:hover:bg-hover"
+                        >
+                          <span className="truncate text-[12.5px] text-ink">{t.turns.at(-1)?.question}</span>
+                          <span className="truncate font-mono text-[11.5px] text-ink-3">
+                            {t.path}:{t.start === t.end ? t.start : `${t.start}-${t.end}`}
+                            {t.turns.length > 1 ? ` · ${t.turns.length} questions` : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </Section>
+                  ) : null}
                   {run?.outcomes.length ? (
                     <Section title="Comments">
                       {run.outcomes.map((o) => {
@@ -211,7 +230,7 @@ export function AgentPanel() {
                     </Section>
                   ) : null}
 
-                  {!run ? (
+                  {!run && !asks.length && job?.kind !== "review" ? (
                     <div className="flex flex-col items-center gap-1 px-6 py-16 text-center">
                       <span className="text-ink-2">Nothing applied yet</span>
                       <span className="text-[12px] text-ink-3">
