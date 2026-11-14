@@ -4,7 +4,10 @@ import { IconoirProvider } from "iconoir-react";
 import { Check, GitCompare, WarningCircle } from "iconoir-react/regular";
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { AgentPanel } from "./AgentPanel";
 import { handleKey, handleSuggestKey } from "./actions";
+import * as agent from "./agent";
+import { ChangesPane } from "./ChangesPane";
 import { DiffPane } from "./DiffPane";
 import { FileList } from "./FileList";
 import { FilePane } from "./FilePane";
@@ -59,11 +62,13 @@ function App() {
   const sidebar = st.useStore((s) => s.sidebar);
   const outlineOpen = st.useStore((s) => s.outlineOpen);
   const browsing = st.useStore((s) => s.browse !== null);
+  const view = st.useStore((s) => s.view);
 
   useEffect(() => {
     // The URL says where you were: a reload or a shared link opens there.
     st.load().then(nav.applyUrl).then(st.restoreBackups);
     void st.loadGitHub();
+    const closeAgent = agent.connect();
     // Threads refresh every minute while the tab is visible (and when you come back to it).
     const poll = setInterval(() => document.visibilityState === "visible" && st.loadGitHub(), 60_000);
     window.addEventListener("keydown", handleKey);
@@ -80,6 +85,7 @@ function App() {
       window.removeEventListener("keydown", handleKey);
       window.removeEventListener("keydown", handleSuggestKey, true);
       document.removeEventListener("visibilitychange", onVisible);
+      closeAgent();
     };
   }, []);
 
@@ -105,10 +111,11 @@ function App() {
   return (
     <div className="flex h-full">
       {sidebar ? <FileList /> : null}
-      {browsing ? <FilePane /> : <DiffPane />}
+      {browsing ? <FilePane /> : view === "agent" ? <ChangesPane /> : <DiffPane />}
       {outlineOpen ? <OutlinePanel /> : null}
       <Palette />
       <SearchWindow />
+      <AgentPanel />
       <ReviewSheet />
     </div>
   );

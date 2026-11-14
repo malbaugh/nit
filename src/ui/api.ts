@@ -1,4 +1,5 @@
 import type {
+  AgentRun,
   Draft,
   FileContents,
   GitHubState,
@@ -32,6 +33,15 @@ const q = (params: Record<string, string | number | undefined>) =>
 export type At = { path: string; side: Side; line: number };
 
 export const api = {
+  agent: () => call<{ run: AgentRun | null }>("GET", "/api/agent"),
+  applyAgent: (ids?: string[]) => call<{ run: AgentRun }>("POST", "/api/agent/apply", { ids }),
+  stopAgent: () => call<{ ok: true }>("POST", "/api/agent/stop", {}),
+  undoAgent: () => call<{ restored: string[]; kept: string[] }>("POST", "/api/agent/undo", {}),
+  agentChanges: async () => {
+    const res = await fetch("/api/agent/changes");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+  },
   search: (query: string, regex: boolean, caseSensitive: boolean, after?: string) =>
     call<SearchResult>(
       "GET",

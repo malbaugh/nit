@@ -6,6 +6,8 @@ import * as st from "./state";
 import { IconButton, Kbd, ProgressRing, Resizer } from "./ui";
 
 export function FileList() {
+  const agentRunning = st.useStore((s) => s.agent?.state === "running");
+  const agentCount = st.useStore((s) => s.agent?.drafts.length ?? 0);
   const width = st.useStore((s) => s.widths.files);
   const files = st.useStore((s) => s.files);
   const viewed = st.useStore((s) => s.viewed);
@@ -53,17 +55,28 @@ export function FileList() {
       <ChangedTree />
 
       <footer className="flex h-11 shrink-0 items-center gap-1 px-2 shadow-[0_-1px_0_var(--line)]">
-        <button
-          type="button"
-          onClick={() => st.set({ reviewOpen: true })}
-          disabled={!drafts.length}
-          className="flex h-7 items-center gap-1.5 rounded-control px-2 text-[12.5px] text-ink-2 transition-[background-color,color] duration-100 enabled:[@media(hover:hover)]:hover:bg-hover-2 enabled:[@media(hover:hover)]:hover:text-ink disabled:text-ink-3"
-        >
-          <ChatLines className={drafts.length ? "text-orange" : ""} />
-          <span className="tabular-nums">
-            {drafts.length} {drafts.length === 1 ? "draft" : "drafts"}
-          </span>
-        </button>
+        {agentRunning ? (
+          <button
+            type="button"
+            onClick={() => st.set({ agentOpen: true })}
+            className="flex h-7 min-w-0 items-center gap-2 rounded-control px-2 text-[12.5px] text-ink-2 transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink"
+          >
+            <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-line-strong border-t-accent" />
+            <span className="truncate">Claude is applying {agentCount}…</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => st.set({ reviewOpen: true })}
+            disabled={!drafts.length}
+            className="flex h-7 items-center gap-1.5 rounded-control px-2 text-[12.5px] text-ink-2 transition-[background-color,color] duration-100 enabled:[@media(hover:hover)]:hover:bg-hover-2 enabled:[@media(hover:hover)]:hover:text-ink disabled:text-ink-3"
+          >
+            <ChatLines className={drafts.length ? "text-orange" : ""} />
+            <span className="tabular-nums">
+              {drafts.length} {drafts.length === 1 ? "draft" : "drafts"}
+            </span>
+          </button>
+        )}
         <span className="ml-auto flex items-center gap-1">
           <SettingsButton />
           <Kbd k="Mod+k" quiet />

@@ -112,3 +112,30 @@ export type SearchResult = {
   /** Set when a regex didn't compile and fff searched for the literal text instead. */
   regexError?: string;
 };
+
+/** What the agent did with one draft comment. */
+export type AgentOutcome = { id: string; status: "done" | "skipped" | "question"; note: string };
+
+/** One agent pass over the drafts, kept per review so results and undo outlive a restart. */
+export type AgentRun = {
+  id: string;
+  drafts: string[];
+  startedAt: number;
+  endedAt: number | null;
+  state: "running" | "done" | "stopped" | "failed" | "undone";
+  /** Snapshot trees before and after (snapshot.ts). */
+  before: string;
+  after: string | null;
+  files: { status: string; path: string }[];
+  outcomes: AgentOutcome[];
+  error: string | null;
+  costUsd: number | null;
+  /** The Agent SDK session, resumed by the next pass. */
+  sessionId: string | null;
+};
+
+/** The live stream while the agent works. */
+export type AgentEvent =
+  | { type: "run"; run: AgentRun }
+  | { type: "text"; text: string }
+  | { type: "tool"; tool: string; target: string };

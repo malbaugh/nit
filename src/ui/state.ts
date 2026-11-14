@@ -1,6 +1,6 @@
 import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pierre/diffs";
 import { useSyncExternalStore } from "react";
-import type { Draft, FileContents, GitHubState, Location, ReviewData, Side, Symbol as Sym } from "../types";
+import type { AgentRun, Draft, FileContents, GitHubState, Location, ReviewData, Side, Symbol as Sym } from "../types";
 import { api } from "./api";
 import { type Row, rows, treeOrder } from "./lines";
 import { toasts } from "./toasts";
@@ -12,6 +12,9 @@ export const DEFAULT_WIDTHS: Widths = { files: 272, outline: 248 };
 /** View preferences, kept in nit's database (browser storage is per port, so per repo). */
 type Layout = Widths & { style: Style; sidebar: boolean; outlineOpen: boolean };
 const savedLayout = (globalThis as { nitLayout?: Partial<Layout> | null }).nitLayout ?? {};
+
+/** One line of the agent's live activity: a file it read or edited, or something it said. */
+export type AgentActivity = { kind: "tool"; tool: string; target: string } | { kind: "text"; text: string };
 
 /** A file outside the review, opened read-only from a definition or reference. */
 export type Browse = { path: string; line: number; lines: number };
@@ -63,6 +66,12 @@ type State = {
   settingsOpen: boolean;
   searchOpen: boolean;
   browse: Browse | null;
+  /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
+  agent: AgentRun | null;
+  agentActivity: AgentActivity[];
+  agentOpen: boolean;
+  /** "agent" shows only the last pass's changes instead of the review's diff. */
+  view: "review" | "agent";
   /** A draft's lines being edited in the diff to make its suggestion (suggest.ts). */
   suggesting: { draftId: string; path: string; start: number; end: number; ending: boolean } | null;
   widths: Widths;
@@ -105,6 +114,10 @@ let state: State = {
   settingsOpen: false,
   searchOpen: false,
   browse: null,
+  agent: null,
+  agentActivity: [],
+  agentOpen: false,
+  view: "review",
   suggesting: null,
   widths: { files: savedLayout.files ?? DEFAULT_WIDTHS.files, outline: savedLayout.outline ?? DEFAULT_WIDTHS.outline },
   github: null,

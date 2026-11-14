@@ -1,13 +1,14 @@
 import { Scroll, Sheet } from "@silk-hq/components";
-import { Copy, EditPencil, OpenNewWindow, WarningTriangle, Xmark } from "iconoir-react/regular";
+import { Copy, EditPencil, OpenNewWindow, Sparks, WarningTriangle, Xmark } from "iconoir-react/regular";
 import { useMemo, useState } from "react";
 import type { Draft, ReviewEvent } from "../types";
+import * as agent from "./agent";
 import { api } from "./api";
 import { splitLabel } from "./Comments";
 import { copy } from "./Menu";
 import { draftsAsMarkdown } from "./review";
 import * as st from "./state";
-import { Button, basename, dirname, IconButton, Kbd, TextSegmented } from "./ui";
+import { Button, basename, dirname, IconButton, Kbd, TextSegmented, Tooltip } from "./ui";
 
 const labelTone: Record<string, string> = {
   blocking: "bg-red-tint text-red",
@@ -48,6 +49,21 @@ const VERDICTS: { value: ReviewEvent; label: string }[] = [
  * Every draft in the review, grouped by file: check your review before it leaves your machine.
  * A Silk sheet from the right (non-commercial licence: nit is a personal open-source tool).
  */
+/** Hands the comments to Claude instead of (or before) posting them. */
+function ApplyButton({ primary = false }: { primary?: boolean }) {
+  const count = st.useStore(
+    (s) => s.drafts.filter((d) => !d.replyTo && (d.body.trim() || d.suggestion !== null)).length,
+  );
+  const running = st.useStore((s) => s.agent?.state === "running");
+  return (
+    <Tooltip label="Apply comments with Claude" keys="Mod+Shift+a" side="top">
+      <Button tone={primary ? "primary" : "secondary"} disabled={!count || running} onClick={() => void agent.apply()}>
+        <Sparks width={14} height={14} /> {running ? "Applying…" : "Apply with Claude"}
+      </Button>
+    </Tooltip>
+  );
+}
+
 export function ReviewSheet() {
   const open = st.useStore((s) => s.reviewOpen);
   const drafts = st.useStore((s) => s.drafts);
@@ -230,6 +246,7 @@ export function ReviewSheet() {
                     <IconButton label="Copy as Markdown" onClick={copyAll} side="top">
                       <Copy />
                     </IconButton>
+                    <ApplyButton />
                     <Button
                       tone="primary"
                       onClick={() => void post()}
@@ -249,9 +266,10 @@ export function ReviewSheet() {
                 >
                   {gh?.status === "unavailable" ? gh.reason : "Looking for the pull request…"}
                 </span>
-                <Button tone="primary" onClick={copyAll} disabled={!drafts.length}>
+                <Button tone="secondary" onClick={copyAll} disabled={!drafts.length}>
                   <Copy width={14} height={14} /> Copy as Markdown
                 </Button>
+                <ApplyButton primary />
               </footer>
             )}
           </Sheet.Content>

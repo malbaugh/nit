@@ -1,10 +1,12 @@
 #!/usr/bin/env bun
 import { join } from "node:path";
+import { createAgent } from "./agent";
 import { buildUI, isStale, uiDirFor } from "./build";
 import { checkoutPr, parsePrArg } from "./checkout";
 import * as git from "./git";
 import { createGitHub } from "./github";
 import { createNavigator } from "./navigate";
+import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
 import * as term from "./term";
 import { themeBoot } from "./theme-boot";
@@ -41,6 +43,7 @@ function patch() {
 }
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
+const agent = createAgent(root, createSnapshots(root, project), store);
 github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
@@ -135,6 +138,8 @@ const serve = (p: number) =>
     hostname: "127.0.0.1",
     port: p,
     development: false,
+    // The agent's event stream stays open; it sends a heartbeat well inside this.
+    idleTimeout: 60,
     // Never send stack traces to the page; log them where the user started nit.
     error(e) {
       term.error(e);
@@ -277,6 +282,69 @@ const serve = (p: number) =>
           } catch (e) {
             return fail(502, e instanceof Error ? e.message : String(e));
           }
+        }),
+      },
+      "/api/agent": {
+        GET: guarded(async () => json({ run: agent.state() })),
+      },
+      "/api/agent/apply": {
+        POST: guarded(async (req) => {
+          const body = (await req.json().catch(() => ({}))) as { ids?: unknown };
+          const ids = Array.isArray(body.ids) ? new Set(body.ids.filter((x) => typeof x === "string")) : null;
+          // Replies to GitHub threads are conversation, not code.
+          const drafts = store
+            .drafts()
+            .filter((d) => !d.replyTo && (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)));
+          if (!drafts.length) return fail(400, "no comments to apply");
+          try {
+            return json({ run: await agent.start(drafts) });
+          } catch (e) {
+            return fail(409, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/agent/stop": {
+        POST: guarded(async () => {
+          agent.stop();
+          return json({ ok: true });
+        }),
+      },
+      "/api/agent/undo": {
+        POST: guarded(async () => {
+          try {
+            return json(await agent.undo());
+          } catch (e) {
+            return fail(409, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/agent/changes": {
+        GET: guarded(async () => new Response(await agent.changes(), { headers: { "content-type": "text/plain" } })),
+      },
+      "/api/agent/events": {
+        // Server-sent events: what already happened in the current run, then everything live.
+        GET: guarded(async (req) => {
+          let off = () => {};
+          let beat: ReturnType<typeof setInterval> | undefined;
+          const stream = new ReadableStream({
+            start(controller) {
+              const send = (e: unknown) => controller.enqueue(`data: ${JSON.stringify(e)}\n\n`);
+              for (const e of agent.replay()) send(e);
+              off = agent.subscribe(send);
+              beat = setInterval(() => controller.enqueue(": keep-alive\n\n"), 20_000);
+              req.signal.addEventListener("abort", () => {
+                off();
+                clearInterval(beat);
+              });
+            },
+            cancel() {
+              off();
+              clearInterval(beat);
+            },
+          });
+          return new Response(stream, {
+            headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+          });
         }),
       },
       "/api/settings": {

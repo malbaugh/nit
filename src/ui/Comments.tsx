@@ -17,6 +17,7 @@ import {
 } from "iconoir-react/regular";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Draft } from "../types";
+import { Note, OutcomeChip } from "./AgentPanel";
 import * as md from "./markdown-edit";
 import * as st from "./state";
 import * as suggest from "./suggest";
@@ -403,6 +404,28 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
         </div>
       ) : null}
       {draft.suggestion !== null ? <SuggestionDiff before={draft.anchor} after={draft.suggestion.split("\n")} /> : null}
+      <AgentOutcome id={draft.id} />
+    </div>
+  );
+}
+
+/** What Claude did with this comment on its last pass, and a way to clear the comment. */
+function AgentOutcome({ id }: { id: string }) {
+  const outcome = st.useStore((s) =>
+    s.agent && s.agent.state !== "undone" && s.agent.state !== "running"
+      ? s.agent.outcomes.find((o) => o.id === id)
+      : undefined,
+  );
+  if (!outcome) return null;
+  return (
+    <div className="mt-2.5 flex items-start gap-2 rounded-control bg-inset px-2.5 py-2 text-[12.5px] shadow-[inset_0_0_0_1px_var(--line)]">
+      <OutcomeChip status={outcome.status} />
+      <span className="min-w-0 flex-1 leading-snug text-ink-2">
+        <Note text={outcome.note} />
+      </span>
+      <Button tone="ghost" className="-my-0.5 h-6 shrink-0 px-2" onClick={() => st.removeDraft(id)}>
+        Resolve
+      </Button>
     </div>
   );
 }

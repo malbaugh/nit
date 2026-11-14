@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Draft } from "./types";
+import type { AgentRun, Draft } from "./types";
 
 export function dataDir() {
   return process.env.NIT_DATA_DIR ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local/share"), "nit");
@@ -79,6 +79,13 @@ export function openStore(review: string) {
     "insert into setting (key, value) values (?, ?) on conflict (key) do update set value = excluded.value",
   );
 
+  // The last agent pass for each review (results and undo outlive a restart).
+  db.run("create table if not exists agent_run (review text primary key, value text not null)");
+  const getRun = db.query<{ value: string }, [string]>("select value from agent_run where review = ?");
+  const putRun = db.query(
+    "insert into agent_run (review, value) values (?, ?) on conflict (review) do update set value = excluded.value",
+  );
+
   const listDrafts = db.query<DraftRow, [string]>("select * from draft where review = ? order by path, start_line");
   const getDraft = db.query<DraftRow, [string, string]>("select * from draft where review = ? and id = ?");
   const upsert =
@@ -104,6 +111,13 @@ export function openStore(review: string) {
     },
     deleteDraft: (id: string) => {
       remove.run(review, id);
+    },
+    agentRun: (): AgentRun | null => {
+      const row = getRun.get(review);
+      return row ? (JSON.parse(row.value) as AgentRun) : null;
+    },
+    setAgentRun: (run: AgentRun) => {
+      putRun.run(review, JSON.stringify(run));
     },
     setting: (key: string): unknown => {
       const row = getSetting.get(key);

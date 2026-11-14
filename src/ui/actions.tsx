@@ -18,11 +18,13 @@ import {
   Settings,
   SidebarCollapse,
   SidebarExpand,
+  Sparks,
   Trash,
   Undo,
   ViewColumns2,
 } from "iconoir-react/regular";
 import type { ReactNode } from "react";
+import * as agent from "./agent";
 import * as nav from "./nav";
 import * as st from "./state";
 import * as suggest from "./suggest";
@@ -53,6 +55,8 @@ const BROWSE = new Set([
   "settings",
   "search",
   "review",
+  "agent-apply",
+  "agent-panel",
   "next-file",
   "prev-file",
   "reload",
@@ -143,6 +147,24 @@ export const actions: Action[] = [
     keys: ["Mod+Shift+Enter"],
     icon: <ChatLines />,
     run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
+  {
+    id: "agent-apply",
+    group: "Review",
+    label: "Apply comments with Claude",
+    keys: ["Mod+Shift+a"],
+    icon: <Sparks />,
+    when: () => st.get().agent?.state !== "running" && st.get().drafts.some((d) => !d.replyTo),
+    run: () => void agent.apply(),
+  },
+  {
+    id: "agent-panel",
+    group: "Review",
+    label: "Claude's last pass",
+    keys: [],
+    icon: <Sparks />,
+    when: () => st.get().agent !== null,
+    run: () => st.set({ agentOpen: true }),
   },
   {
     id: "suggest",
@@ -415,10 +437,11 @@ export function handleKey(e: KeyboardEvent) {
     return;
   }
   // The sheet traps focus and handles Esc itself.
-  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen) return;
+  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen || s.agentOpen) return;
   if (e.key === "Escape") {
     if (s.peek) nav.closePeek();
     else if (s.browse) nav.goBack();
+    else if (s.view === "agent") st.set({ view: "review" });
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
     return;
   }
