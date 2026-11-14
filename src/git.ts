@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { $ } from "bun";
+import { NitError } from "./term";
 
 const out = async (p: ReturnType<typeof $>) => (await p.nothrow().quiet().text()).trim();
 
@@ -11,6 +12,32 @@ export async function repoRoot(cwd = process.cwd()) {
 
 export async function defaultBase(root: string) {
   return (await out($`git symbolic-ref --short refs/remotes/origin/HEAD`.cwd(root))) || "main";
+}
+
+const exists = async (root: string, ref: string) =>
+  (await $`git rev-parse --verify --quiet ${`${ref}^{commit}`}`.cwd(root).nothrow().quiet()).exitCode === 0;
+
+/**
+ * What to diff against: the branch or commit you named (or origin's copy of it), else origin's
+ * default branch, else main or master. Throws a NitError saying what's missing.
+ */
+export async function resolveBase(root: string, named?: string) {
+  if (named) {
+    if (await exists(root, named)) return named;
+    if (await exists(root, `origin/${named}`)) return `origin/${named}`;
+    throw new NitError(
+      `There's no branch or commit called ${named}`,
+      "It isn't here, and origin doesn't have it either.",
+      "Fetch it first (`git fetch origin`), or compare against another branch: nit <branch>",
+    );
+  }
+  for (const ref of [await defaultBase(root), "origin/main", "main", "origin/master", "master"])
+    if (ref && (await exists(root, ref))) return ref;
+  throw new NitError(
+    "Couldn't tell which branch to compare against",
+    "This repository has no origin default branch, main or master.",
+    "Name it: nit <branch>",
+  );
 }
 
 export async function mergeBase(root: string, base: string) {

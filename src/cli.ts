@@ -40,40 +40,64 @@ import type { AskThread, Draft, FileContents, GuideChapter, ReviewData, ReviewEv
 const dev = process.env.NIT_DEV === "1";
 const uiDir = uiDirFor(dev);
 
-if (process.argv[2] === "--version" || process.argv[2] === "-v") {
+const args = process.argv.slice(2);
+if (args[0] === "--version" || args[0] === "-v") {
   console.log(VERSION);
   process.exit(0);
 }
-if (process.argv[2] === "--help" || process.argv[2] === "-h") {
-  console.log(`nit ${VERSION}: keyboard-first local code review
-
-  nit                 review this branch against its default base
-  nit <branch>        review against another branch
-  nit <pr>            review a pull request (number, #number or URL) in its own worktree
-
-https://sidwebworks.com/things/nit`);
+if (args[0] === "--help" || args[0] === "-h") {
+  term.help(VERSION);
   process.exit(0);
 }
+if (args[0]?.startsWith("-"))
+  term.fail(new term.NitError(`nit doesn't know ${args[0]}`, undefined, "See what it takes: nit --help"));
+if (args.length > 1)
+  term.fail(
+    new term.NitError(
+      "nit takes one thing to review",
+      `It got ${args.length}: ${args.join(" ")}`,
+      "Pass a branch, a commit or a pull request. See nit --help",
+    ),
+  );
+
+// Until the server is up, anything unexpected stops nit with a readable error; after, it's
+// logged and nit keeps serving the review.
+let started = false;
+const unexpected = (e: unknown) => (started ? term.error(e) : term.fail(e));
+process.on("uncaughtException", unexpected);
+process.on("unhandledRejection", unexpected);
+
+term.header(VERSION);
 /** A file of the browser UI: baked into the binary, or built on disk. */
 const uiFile = (path: string) =>
   compiled() ? Bun.file(embedded.ui.get(path) ?? "/nit-missing") : Bun.file(join(uiDir, path));
 
-const fail0 = term.fail;
-
-const here = (await git.repoRoot()) || fail0("not inside a git repository");
+const here =
+  (await git.repoRoot()) ||
+  term.fail(
+    new term.NitError(
+      "This isn't a git repository",
+      `${term.tilde(process.cwd())} isn't inside one.`,
+      "Run nit from inside the repository you want to review.",
+    ),
+  );
 // `nit 2227`, `nit #2227` or `nit <pr-url>` reviews a pull request in its own worktree.
-const arg = process.argv[2];
+const arg = args[0];
 const prRef = parsePrArg(arg);
-const opened = prRef
-  ? await checkoutPr(here, prRef).catch((e: unknown) => fail0(e instanceof Error ? e.message : String(e)))
-  : null;
+const opened = prRef ? await checkoutPr(here, prRef).catch(term.fail) : null;
 const root = opened?.path ?? here;
-const base = opened?.base ?? arg ?? (await git.defaultBase(root));
+const base = opened?.base ?? (await git.resolveBase(root, arg).catch(term.fail));
 const forcedPr = opened?.number ?? (Number(process.env.NIT_PR) || null);
-const mergeBase = await git.mergeBase(root, base);
-if (!mergeBase)
-  fail0(`no common history with ${base}. Fetch it first (git fetch origin), or pass the branch to compare against.`);
 const branch = await git.currentBranch(root);
+const mergeBase =
+  (await git.mergeBase(root, base)) ||
+  term.fail(
+    new term.NitError(
+      `${branch} and ${base} share no history`,
+      "There's no commit both came from, so there's nothing to diff against.",
+      "If this is a shallow clone, run `git fetch --unshallow`. Or compare against another branch: nit <branch>",
+    ),
+  );
 const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
 // Claude's reading order, per review: it holds while the set of files does (placeGuide fills gaps).
@@ -152,7 +176,12 @@ github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
 
-if (!compiled() && (dev || isStale(uiDir))) await buildUI(uiDir);
+if (!compiled() && (dev || isStale(uiDir)))
+  await term.task(
+    "Building the page",
+    () => buildUI(uiDir),
+    () => "Built the page",
+  );
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (status: number, error: string) => json({ error }, status);
@@ -862,10 +891,55 @@ port = server.port!;
 const url = `http://127.0.0.1:${server.port}`;
 const openBrowser = () => Bun.spawn([process.platform === "darwin" ? "open" : "xdg-open", url]);
 // Counts for the banner, straight from the patch the page shows.
-const text = await patch();
+// What the banner and steps call them: a pull request's own branch and base, not nit's local names.
+const shownBranch = opened?.head ?? branch;
+const shownBase = opened?.baseName ?? base;
+const text = await term.task(
+  `Reading the diff against ${shownBase}`,
+  () => patch(),
+  (t) => {
+    const n = t.match(/^diff --git /gm)?.length ?? 0;
+    return n
+      ? `${n} ${n === 1 ? "file" : "files"} changed against ${shownBase}`
+      : `No changes against ${shownBase} yet`;
+  },
+);
 const files = text.match(/^diff --git /gm)?.length ?? 0;
 const add = text.match(/^\+(?!\+\+ )/gm)?.length ?? 0;
 const del = text.match(/^-(?!-- )/gm)?.length ?? 0;
-term.banner({ title: opened?.title ?? null, pr: opened?.number ?? null, branch, base, files, add, del, url, root });
+term.banner({
+  title: opened?.title ?? null,
+  pr: opened?.number ?? null,
+  branch: shownBranch,
+  base: shownBase,
+  files,
+  add,
+  del,
+  url,
+  root,
+});
+started = true;
 term.keys({ o: { label: "open", run: openBrowser }, q: { label: "quit", run: () => process.exit(0) } });
 if (process.env.NIT_NO_OPEN !== "1") openBrowser();
+
+// Say up front what won't work, rather than only in the page: GitHub and Claude sign-in.
+void github.state().then((gh) => {
+  if (gh.status === "ready") {
+    const threads = gh.threads.filter((t) => !t.resolved).length;
+    term.log(
+      `${term.c.green("✓")} GitHub  PR #${gh.pr.number}${threads ? term.c.dim(` · ${threads} open ${threads === 1 ? "thread" : "threads"}`) : ""}`,
+    );
+  } else if (/no open pull request/i.test(gh.reason))
+    term.log(term.c.dim(`· ${gh.reason} Comments stay local until there is one.`));
+  else term.log(`${term.c.yellow("!")} GitHub: ${gh.reason}`);
+});
+void authStatus().then((a) => {
+  if (!a.installed)
+    term.log(`${term.c.yellow("!")} Claude Code isn't installed, so Claude features are off.`, [
+      term.c.dim("Install it from https://claude.com/claude-code"),
+    ]);
+  else if (!a.loggedIn && !a.hasKey)
+    term.log(`${term.c.yellow("!")} Claude isn't signed in, so Claude features are off.`, [
+      term.c.dim("Run `claude`, then /login. Or save an API key in Settings → Claude."),
+    ]);
+});

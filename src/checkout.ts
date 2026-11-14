@@ -5,6 +5,7 @@ import { Octokit } from "octokit";
 import { loadCommands } from "./config";
 import { parseRemote, token } from "./github";
 import * as term from "./term";
+import { NitError } from "./term";
 
 export type PrRef = { owner: string | null; name: string | null; number: number };
 
@@ -34,34 +35,61 @@ const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
 export async function checkoutPr(
   root: string,
   ref: PrRef,
-): Promise<{ path: string; base: string; number: number; title: string }> {
+): Promise<{ path: string; base: string; number: number; title: string; head: string; baseName: string }> {
   const remote = parseRemote(await out($`git remote get-url origin`.cwd(root)));
-  if (!remote) throw new Error("this repo has no origin remote");
+  if (!remote)
+    throw new NitError(
+      "This repository isn't on GitHub",
+      "nit opens pull requests from the repository's origin remote, and it has none on GitHub.",
+      "Run nit inside a clone of the repository the pull request is in.",
+    );
   if (
     ref.owner &&
     ref.name &&
     `${ref.owner}/${ref.name}`.toLowerCase() !== `${remote.owner}/${remote.name}`.toLowerCase()
   )
-    throw new Error(
-      `that PR is in ${ref.owner}/${ref.name}; run nit inside a clone of it (this is ${remote.owner}/${remote.name})`,
+    throw new NitError(
+      `That pull request is in ${ref.owner}/${ref.name}`,
+      `This is a clone of ${remote.owner}/${remote.name}.`,
+      `Run nit inside a clone of ${ref.owner}/${ref.name}.`,
     );
 
   const auth = await token(remote.host);
   if (!auth)
-    throw new Error("sign in with `gh auth login` (or save a token in nit's Settings → GitHub) to open a pull request");
+    throw new NitError(
+      "nit isn't signed in to GitHub",
+      "Opening a pull request needs to read it from GitHub.",
+      "Run `gh auth login`, or save a token in nit's Settings → GitHub.",
+    );
   const octokit = new Octokit({
     auth,
     baseUrl: remote.host === "github.com" ? undefined : `https://${remote.host}/api/v3`,
     userAgent: "nit",
   });
-  const { data: pr } = await octokit.rest.pulls.get({
-    owner: remote.owner,
-    repo: remote.name,
-    pull_number: ref.number,
-  });
+  const repo = `${remote.owner}/${remote.name}`;
+  const pr = await term.task(
+    `Finding pull request #${ref.number}`,
+    async () => {
+      try {
+        return (await octokit.rest.pulls.get({ owner: remote.owner, repo: remote.name, pull_number: ref.number })).data;
+      } catch (e) {
+        if ((e as { status?: number }).status === 404)
+          throw new NitError(
+            `There's no pull request #${ref.number} in ${repo}`,
+            undefined,
+            "Check the number, or pass the pull request's URL.",
+          );
+        throw e;
+      }
+    },
+    (p) =>
+      `PR #${p.number}  ${p.head.ref} → ${p.base.ref}${p.merged_at ? term.c.dim("  merged") : p.state === "closed" ? term.c.dim("  closed") : ""}`,
+  );
   const branch = pr.head.ref;
   const base = `origin/${pr.base.ref}`;
-  term.step(`PR #${pr.number} · ${branch} → ${pr.base.ref}`);
+  // A merged or closed pull request's branch is often deleted, and a fork's can be: GitHub
+  // keeps its commits at refs/pull/<n>/head either way.
+  const fromPullRef = pr.state === "closed" || !pr.head.repo;
 
   const env = {
     ...process.env,
@@ -71,6 +99,7 @@ export async function checkoutPr(
     NIT_REPO_ROOT: root,
   };
   const command = (await loadCommands(root)).checkout;
+  const local = `pr-${pr.number}`;
   let path: string | null = null;
 
   if (command) {
@@ -81,39 +110,58 @@ export async function checkoutPr(
     const [text, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     const last = text.trim().split("\n").at(-1)?.trim() ?? "";
     if (code !== 0 || !isDir(last))
-      throw new Error(`the checkout command (${command.from}) didn't print a directory (exit ${code})`);
+      throw new NitError(
+        "Your checkout command didn't check out the pull request",
+        `${command.run} (from ${command.from}) ${code !== 0 ? `exited with ${code}` : "didn't print a directory as its last line"}.`,
+        "Fix it, or clear it in Settings → Commands to use a git worktree.",
+      );
     path = last;
   } else {
+    // A worktree that already has the pull request: its branch, or the pr-<n> branch nit made.
     const worktrees = await out($`git worktree list --porcelain`.cwd(root));
     for (const block of worktrees.split("\n\n")) {
-      if (block.includes(`branch refs/heads/${branch}\n`) || block.endsWith(`branch refs/heads/${branch}`)) {
+      const has = (b: string) => block.includes(`branch refs/heads/${b}\n`) || block.endsWith(`branch refs/heads/${b}`);
+      if (has(branch) || has(local)) {
         path = block.match(/^worktree (.+)$/m)?.[1] ?? null;
-        if (path) term.step(`using the worktree at ${term.tilde(path)}`);
         break;
       }
     }
-    if (!path) {
+    if (path) term.step(`using the worktree at ${term.tilde(path)}`);
+    else {
       const main = dirname(await out($`git rev-parse --path-format=absolute --git-common-dir`.cwd(root)));
-      path = join(dirname(main), `${basename(main)}-${slug(branch)}`);
-      if (existsSync(path)) throw new Error(`${path} already exists and isn't a worktree for ${branch}`);
-      term.step(`creating a worktree at ${term.tilde(path)}`);
+      const into = join(dirname(main), `${basename(main)}-${slug(branch)}`);
+      path = into;
+      if (existsSync(into))
+        throw new NitError(
+          `${term.tilde(into)} is in the way`,
+          "nit puts the pull request in a worktree there, and something else already is.",
+          "Move it aside, or run nit from inside it.",
+        );
       const hasGh = (await $`gh --version`.nothrow().quiet()).exitCode === 0;
-      if (hasGh) {
-        // gh sets push tracking, so `git push` from the worktree updates the PR (forks included).
-        await $`git worktree add --detach ${path}`.cwd(root).quiet();
-        const r = await $`gh pr checkout ${pr.number} --branch ${branch}`.cwd(path).env(env).nothrow().quiet();
-        if (r.exitCode !== 0) {
-          await $`git worktree remove --force ${path}`.cwd(root).nothrow().quiet();
-          throw new Error(`gh pr checkout failed: ${r.stderr.toString().trim()}`);
-        }
-      } else {
-        const local = `pr-${pr.number}`;
-        await $`git fetch origin ${`pull/${pr.number}/head:${local}`}`.cwd(root).quiet();
-        await $`git worktree add ${path} ${local}`.cwd(root).quiet();
-      }
+      // From the pull request's own ref, into a pr-<n> branch: works for merged, closed and fork PRs.
+      const fromRef = async () => {
+        await $`git fetch origin ${`+pull/${pr.number}/head:${local}`}`.cwd(root).quiet();
+        await $`git worktree add ${into} ${local}`.cwd(root).quiet();
+      };
+      await term.task(
+        `Checking out PR #${pr.number}`,
+        async () => {
+          if (fromPullRef || !hasGh) return fromRef();
+          // gh sets push tracking, so `git push` from the worktree updates the PR (forks included).
+          await $`git worktree add --detach ${into}`.cwd(root).quiet();
+          const r = await $`gh pr checkout ${pr.number} --branch ${branch}`.cwd(into).env(env).nothrow().quiet();
+          if (r.exitCode === 0) return;
+          // Its branch is gone or unreachable: the pull request's ref still has its commits.
+          await $`git worktree remove --force ${into}`.cwd(root).nothrow().quiet();
+          term.warn(`gh couldn't check out ${branch}; using the pull request's commits instead`);
+          await fromRef();
+        },
+        () =>
+          `Checked out into ${term.tilde(into)}${fromPullRef ? term.c.dim(`  (${pr.merged_at ? "merged" : "closed"}: from the PR's commits)`) : ""}`,
+      );
     }
   }
 
   await $`git fetch origin ${pr.base.ref} --quiet`.cwd(path).nothrow().quiet();
-  return { path, base, number: pr.number, title: `PR #${pr.number}  ${pr.title}` };
+  return { path, base, number: pr.number, title: pr.title, head: branch, baseName: pr.base.ref };
 }

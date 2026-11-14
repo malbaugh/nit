@@ -32,18 +32,164 @@ export const warn = (msg: string) => {
   print(`  ${c.yellow("!")} ${msg}`);
 };
 
-/** Stops nit with one red line saying what went wrong and what to do. */
-export function fail(msg: string): never {
-  process.stderr.write(`\n  ${c.red("✕")} ${msg}\n\n`);
+/** A failure someone can act on: what went wrong, why, and what to do about it. */
+export class NitError extends Error {
+  constructor(
+    message: string,
+    readonly why?: string,
+    readonly hint?: string,
+  ) {
+    super(message);
+  }
+}
+
+const debug = process.env.NIT_DEBUG === "1";
+const ISSUES = "https://github.com/sidwebworks/nit/issues";
+
+/**
+ * Any error as a NitError: GitHub's (401, 403, 404, rate limits), the network's, and git's
+ * get plain words and a next step; anything else is a bug in nit, and says where to report it.
+ */
+export function explain(e: unknown): NitError {
+  if (e instanceof NitError) return e;
+  const err = e as { status?: number; code?: string; message?: string; stderr?: { toString(): string } };
+  const message = err?.message ?? String(e);
+  if (typeof err?.status === "number") {
+    if (err.status === 401)
+      return new NitError(
+        "GitHub didn't accept your sign-in",
+        "The token nit used is missing, expired or revoked.",
+        "Run `gh auth login`, or save a token in nit's Settings → GitHub.",
+      );
+    if (err.status === 403 || err.status === 429)
+      return new NitError(
+        "GitHub refused the request",
+        message.split(" - ")[0],
+        /rate limit/i.test(message) ? "Wait a few minutes and try again." : "Check the token can read this repository.",
+      );
+    if (err.status === 404)
+      return new NitError(
+        "GitHub couldn't find that",
+        "It doesn't exist, or the token can't see it.",
+        "Check the repository and number, and that you're signed in to the right account.",
+      );
+  }
+  if (
+    ["ENOTFOUND", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ConnectionRefused"].includes(err?.code ?? "") ||
+    /fetch failed|Unable to connect/i.test(message)
+  )
+    return new NitError("Couldn't reach GitHub", message, "Check your connection, then try again.");
+  // Bun's shell errors carry the command's stderr, which says more than "exit code 128".
+  const stderr = err?.stderr?.toString().trim();
+  if (stderr) return new NitError("A git command failed", stderr.split("\n").slice(-3).join(" "), undefined);
+  return new NitError(
+    message,
+    "This looks like a bug in nit.",
+    `Run with NIT_DEBUG=1 for details, and report it at ${ISSUES}`,
+  );
+}
+
+const wrap = (text: string, room: number) => {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/)) {
+    if (line && line.length + word.length + 1 > room) {
+      lines.push(line);
+      line = word;
+    } else line = line ? `${line} ${word}` : word;
+  }
+  return line ? [...lines, line] : lines;
+};
+
+/** The red block for a failure: what went wrong in bold, why under it, then what to do. */
+function block(err: NitError, original: unknown) {
+  const room = Math.max(60, Math.min(width(), 100) - 6);
+  const lines = [`  ${c.red("✕")} ${c.bold(err.message)}`];
+  if (err.why) for (const l of wrap(err.why, room)) lines.push(`    ${c.dim(l)}`);
+  if (err.hint) lines.push(`    ${c.cyan("→")} ${err.hint}`);
+  if (debug && original instanceof Error && original.stack) lines.push("", c.dim(original.stack));
+  return lines;
+}
+
+/** Stops nit with what went wrong, why, and what to do. */
+export function fail(e: unknown): never {
+  stopTicker();
+  clearFooter();
+  // The header already left a blank line; otherwise start with one.
+  process.stderr.write(
+    `${headed ? "" : "\n"}${block(typeof e === "string" ? new NitError(e) : explain(e), e).join("\n")}\n\n`,
+  );
   process.exit(1);
 }
 
-/** A request the server couldn't handle: the message, then the stack dimmed. */
+/** Something went wrong while nit runs (a request, a background job): logged, and nit carries on. */
 export function error(e: unknown) {
-  const [first, ...rest] = (e instanceof Error ? (e.stack ?? e.message) : String(e)).split("\n");
+  const err = explain(e);
+  const [first, ...rest] = block(err, e);
   log(
-    `${c.red("✕")} ${first}`,
-    rest.slice(0, 6).map((l) => c.dim(l.trim())),
+    first.trim(),
+    rest.map((l) => l.trim()),
+  );
+}
+
+/** "nit 0.1.0", before anything else. */
+let headed = false;
+export const header = (version: string) => {
+  headed = true;
+  out(`\n  ${c.bold("nit")} ${c.dim(version)}\n`);
+};
+
+/**
+ * One step of getting the review ready: a spinner while it runs, then a tick (or a cross) and
+ * how long it took. `done` can say what it found.
+ */
+export async function task<T>(label: string, fn: () => Promise<T>, done?: (r: T) => string): Promise<T> {
+  const since = Date.now();
+  let frame = 0;
+  const draw = () => tty && process.stdout.write(`\r\x1b[2K  ${c.cyan(SPIN[frame++ % SPIN.length])} ${label}…`);
+  draw();
+  const spin = tty ? setInterval(draw, 80) : undefined;
+  try {
+    const r = await fn();
+    clearInterval(spin);
+    clearFooter();
+    const ms = Date.now() - since;
+    out(`  ${c.green("✓")} ${done ? done(r) : label}${ms >= 150 ? `  ${c.dim(seconds(ms))}` : ""}`);
+    return r;
+  } catch (e) {
+    clearInterval(spin);
+    clearFooter();
+    out(`  ${c.red("✕")} ${label}`);
+    throw e;
+  }
+}
+const seconds = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 1000)}s`);
+
+/** `nit --help`. */
+export function help(version: string) {
+  const row = (cmd: string, what: string) => `    ${cmd.padEnd(20)}${c.dim(what)}`;
+  out(
+    [
+      "",
+      `  ${c.bold("nit")} ${c.dim(version)}  keyboard-first code review`,
+      "",
+      `  ${c.bold("Usage")}`,
+      row("nit", "review this branch against its default base"),
+      row("nit <branch>", "review it against another branch or commit"),
+      row("nit <pr>", "review a pull request: 2234, #2234 or its URL"),
+      "",
+      `  ${c.bold("Options")}`,
+      row("-h, --help", "show this"),
+      row("-v, --version", "print the version"),
+      "",
+      `  ${c.bold("Environment")}`,
+      row("NIT_PORT", "the port to serve on"),
+      row("NIT_NO_OPEN=1", "don't open the browser"),
+      row("NIT_DEBUG=1", "show stack traces with errors"),
+      "",
+      `  ${c.dim("https://sidwebworks.com/things/nit")}`,
+      "",
+    ].join("\n"),
   );
 }
 
@@ -90,10 +236,13 @@ function busy(label: string, since: number) {
   ticker.unref?.();
   redraw();
 }
-function idle() {
-  activity = null;
+function stopTicker() {
   clearInterval(ticker);
   ticker = undefined;
+}
+function idle() {
+  activity = null;
+  stopTicker();
   redraw();
 }
 
@@ -184,11 +333,10 @@ export function banner(o: {
     o.pr ? `#${o.pr}` : null,
     o.title ? `${o.branch} → ${o.base}` : null,
     `${o.files} ${o.files === 1 ? "file" : "files"}`,
-    `${c.green(`+${o.add}`)} ${c.red(`−${o.del}`)}`,
   ].filter(Boolean);
   out();
-  out(`  ${c.bold("nit")}  ${head}`);
-  out(`       ${c.dim(meta.join("   "))}`);
+  out(`  ${c.bold(head)}`);
+  out(`  ${c.dim(meta.join("  ·  "))}  ${c.green(`+${o.add}`)} ${c.red(`−${o.del}`)}`);
   out();
   out(`  ${c.green("➜")}  ${c.cyan(o.url)}`);
   out(`     ${c.dim(tilde(o.root))}`);
