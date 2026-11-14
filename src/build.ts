@@ -36,6 +36,9 @@ export async function buildUI(dir: string) {
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
   });
   if (!result.success) throw new AggregateError(result.logs, "nit: UI build failed");
+  // Pierre's self-contained highlighting worker, served beside the page (ui/pool.tsx).
+  const worker = Bun.resolveSync("@pierre/diffs/worker/worker-portable.js", import.meta.dir);
+  await Bun.write(join(dir, "worker-portable.js"), Bun.file(worker));
 }
 
 if (import.meta.main) {

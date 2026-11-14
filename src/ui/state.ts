@@ -125,6 +125,13 @@ export const subscribeToStore = subscribe;
 
 export const currentFile = (s = state) => s.files[s.current];
 
+/** FNV-1a over the text; enough to tell one patch from the next. */
+function hashOf(text: string) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+
 // ---------- file contents (full old/new text, for context expansion and comment anchors)
 
 const contents = new Map<string, Promise<FileContents>>();
@@ -176,7 +183,8 @@ export async function load() {
     // In tree order, so next/previous file walks the sidebar top to bottom.
     const files = same
       ? state.files
-      : parsePatchFiles(data.patch)
+      : // Keys that change with the patch let the highlight pool reuse work when you switch back.
+        parsePatchFiles(data.patch, { cacheKeyPrefix: `p${hashOf(data.patch)}` })
           .flatMap((p) => p.files)
           .sort((a, b) => treeOrder(a.name, b.name));
     const before = currentFile()?.name;

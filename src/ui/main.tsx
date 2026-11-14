@@ -10,6 +10,7 @@ import { FilePane } from "./FilePane";
 import * as nav from "./nav";
 import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
+import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
 import { SearchWindow } from "./Search";
 import * as st from "./state";
@@ -20,7 +21,8 @@ import { EmptyState, Kbd, TooltipProvider } from "./ui";
 const ICONS = { width: 15, height: 15, strokeWidth: 1.6 };
 
 // ?debug exposes the store for poking at state from the console.
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { nit: st, nitNav: nav, nitThemes: theme });
+if (new URLSearchParams(location.search).has("debug"))
+  Object.assign(window, { nit: st, nitNav: nav, nitThemes: theme });
 
 /** Base UI toasts (stacking, swipe to dismiss, timers pause on hover) in nit's look. */
 function Toasts() {
@@ -112,7 +114,9 @@ createRoot(document.getElementById("root")!).render(
   <IconoirProvider iconProps={ICONS}>
     <TooltipProvider>
       <Toast.Provider toastManager={toasts} limit={3}>
-        <App />
+        <HighlightPool>
+          <App />
+        </HighlightPool>
         <Toasts />
       </Toast.Provider>
     </TooltipProvider>
