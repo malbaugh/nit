@@ -4,7 +4,7 @@ import { ArrowLeft, NavArrowRight, SidebarExpand, Xmark } from "iconoir-react/re
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { HIGHLIGHTER } from "./Code";
-import { DIFF_CSS, linkKey, revealLine } from "./DiffPane";
+import { DIFF_CSS, linkKey, revealLine, tokenLink } from "./DiffPane";
 import * as nav from "./nav";
 import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
@@ -73,15 +73,19 @@ export function FilePane() {
       lineHoverHighlight: "number" as const,
       unsafeCSS: DIFF_CSS,
       onTokenEnter: (t: TokenEventBase, e: PointerEvent) => {
-        if (linkKey(e)) t.tokenElement.setAttribute("data-nit-link", "");
+        const b = st.get().browse;
+        if (b)
+          tokenLink.enter(t.tokenElement, e, { path: b.path, side: "additions", line: t.lineNumber }, t.lineCharStart);
       },
-      onTokenLeave: (t: TokenEventBase) => t.tokenElement.removeAttribute("data-nit-link"),
-      onTokenClick: (t: TokenEventBase, e: MouseEvent) => {
+      onTokenLeave: (t: TokenEventBase) => tokenLink.leave(t.tokenElement),
+      onTokenClick: async (t: TokenEventBase, e: MouseEvent) => {
         const b = st.get().browse;
         if (!b) return;
         st.set({ browse: { ...b, line: t.lineNumber } });
         if (!linkKey(e)) return;
         e.preventDefault();
+        const at = { path: b.path, side: "additions" as const, line: t.lineNumber };
+        if (!(await tokenLink.symbolAt(at, t.lineCharStart))) return;
         void nav.lookup("definition", { col: t.lineCharStart });
       },
     }),

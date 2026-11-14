@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import type { Side } from "../types";
 import { AskAnnotation } from "./Ask";
 import * as agent from "./agent";
+import { type At, api } from "./api";
 import { HIGHLIGHTER } from "./Code";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
@@ -112,7 +113,67 @@ export const DIFF_CSS = `
 `;
 
 /** ⌘ (Ctrl elsewhere) held over a word underlines it, like an editor's go-to-definition link. */
-export const linkKey = (e: MouseEvent) => e.metaKey || e.ctrlKey;
+export const linkKey = (e: MouseEvent | KeyboardEvent) => e.metaKey || e.ctrlKey;
+
+// The underline follows the key as well as the pointer: pressing ⌘ over a word underlines it at
+// once, and letting go removes it. Only identifiers get it (tree-sitter's, per line, asked once),
+// like an editor: keywords, strings, comments and punctuation aren't links.
+let hovered: { el: Element; at: At; col: number } | null = null;
+let held = false;
+const lines = new Map<string, Promise<{ name: string; col: number }[]>>();
+let linesOf: unknown = null;
+function identifiers(at: At) {
+  // A reload means the files may have changed; start over.
+  if (st.get().data !== linesOf) {
+    lines.clear();
+    linesOf = st.get().data;
+  }
+  const key = `${at.side}\0${at.path}\0${at.line}`;
+  const p = lines.get(key) ?? api.identifiers(at).catch(() => []);
+  lines.set(key, p);
+  return p;
+}
+const symbolAt = async (at: At, col: number) =>
+  (await identifiers(at)).some((i) => col >= i.col && col < i.col + i.name.length);
+
+async function paintLink() {
+  const h = hovered;
+  if (!h) return;
+  if (!held) return h.el.removeAttribute("data-nit-link");
+  const link = await symbolAt(h.at, h.col);
+  if (hovered === h && held) h.el.toggleAttribute("data-nit-link", link);
+}
+export const tokenLink = {
+  enter(el: Element, e: PointerEvent, at: At, col: number) {
+    hovered?.el.removeAttribute("data-nit-link");
+    hovered = { el, at, col };
+    held = linkKey(e);
+    void paintLink();
+  },
+  leave(el: Element) {
+    el.removeAttribute("data-nit-link");
+    if (hovered?.el === el) hovered = null;
+  },
+  /** ⌘-click goes to a definition only from an identifier. */
+  symbolAt,
+};
+const onModifier = (e: KeyboardEvent) => {
+  if (linkKey(e) === held) return;
+  held = linkKey(e);
+  void paintLink();
+};
+window.addEventListener("keydown", onModifier);
+window.addEventListener("keyup", onModifier);
+window.addEventListener("blur", () => {
+  held = false;
+  void paintLink();
+});
+
+/** Where a token in the review's diff is: the old path for a removed line. */
+function tokenAt(side: Side, line: number): At | null {
+  const f = st.currentFile();
+  return f ? { path: side === "deletions" ? (f.prevName ?? f.name) : f.name, side, line } : null;
+}
 
 const toPoint = (side: SelectedLineRange["side"], line: number) => ({ side: side ?? ("additions" as const), line });
 
@@ -280,12 +341,15 @@ export function DiffPane() {
         st.startComment();
       },
       onTokenEnter: (t: DiffTokenEventBaseProps, e: PointerEvent) => {
-        if (linkKey(e)) t.tokenElement.setAttribute("data-nit-link", "");
+        const at = tokenAt(t.side, t.lineNumber);
+        if (at) tokenLink.enter(t.tokenElement, e, at, t.lineCharStart);
       },
-      onTokenLeave: (t: DiffTokenEventBaseProps) => t.tokenElement.removeAttribute("data-nit-link"),
-      onTokenClick: (t: DiffTokenEventBaseProps, e: MouseEvent) => {
+      onTokenLeave: (t: DiffTokenEventBaseProps) => tokenLink.leave(t.tokenElement),
+      onTokenClick: async (t: DiffTokenEventBaseProps, e: MouseEvent) => {
         if (!linkKey(e)) return;
         e.preventDefault();
+        const at = tokenAt(t.side, t.lineNumber);
+        if (!at || !(await tokenLink.symbolAt(at, t.lineCharStart))) return;
         st.set({ cursor: { side: t.side, line: t.lineNumber }, anchor: null });
         void nav.lookup("definition", { col: t.lineCharStart });
       },
