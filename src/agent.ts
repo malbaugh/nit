@@ -29,8 +29,9 @@ import {
  * outside the checkout. Snapshots before and after give its exact changes and undo.
  */
 
-const TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
-// Searching goes through nit's fff tools (grep, multi_grep, find_files), so only Read is built in.
+// Searching goes through nit's fff tools (grep, multi_grep, find_files) for every pass: Claude
+// Code's Glob and Grep aren't offered.
+const TOOLS = ["Read", "Edit", "Write"];
 const READ_TOOLS = ["Read"];
 
 // What to do about the errors a reviewer can fix; the rest keep Claude Code's own words.
@@ -56,6 +57,7 @@ const INSTRUCTIONS = `You are applying a reviewer's comments to this checkout. E
 
 For each comment:
 - Make the smallest change that does what it asks, in the code's own style and within the rules in <guidelines>.
+- To find code, use grep, multi_grep or find_files, then Read; make independent searches together in one turn.
 - A <suggestion> is the exact replacement for its lines: apply its text as written.
 - A question, or a comment you can't act on safely, gets its answer in the note and leaves the code as it is.
 - Keep every other line as it is. You edit files; running commands and committing stay with the reviewer.
