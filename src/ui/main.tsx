@@ -15,6 +15,7 @@ import { useFindMarks } from "./marks";
 import * as nav from "./nav";
 import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
+import { PullRequestSheet } from "./PullRequest";
 import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
 import { SearchPane } from "./Search";
@@ -127,6 +128,7 @@ function App() {
       {outlineOpen && !searching ? <OutlinePanel /> : null}
       <Palette />
       <AgentPanel />
+      <PullRequestSheet />
       <ReviewSheet />
       <SignInDialog />
       <SettingsDialog />

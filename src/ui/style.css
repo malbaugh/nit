@@ -216,7 +216,8 @@ pre[style*="--hls-dark"] span {
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-.md > * + * {
+/* Streamdown puts its blocks in one wrapper div. */
+:is(.md, .md > div) > * + * {
   margin-top: 0.6em;
 }
 .md h1,
@@ -227,6 +228,9 @@ pre[style*="--hls-dark"] span {
   letter-spacing: -0.015em;
   line-height: 1.3;
   text-wrap: balance;
+}
+:is(.md, .md > div) > :is(h1, h2, h3, h4):not(:first-child) {
+  margin-top: 1.2em;
 }
 .md h1 {
   font-size: 1.35em;
@@ -303,15 +307,26 @@ pre[style*="--hls-dark"] span {
   height: 1px;
   background: var(--line);
 }
+/* Wide tables scroll inside themselves instead of breaking words in every cell. */
 .md table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   font-size: 12.5px;
+  line-height: 1.5;
 }
 .md th,
 .md td {
-  padding: 4px 10px;
+  padding: 5px 10px;
   box-shadow: 0 0 0 0.5px var(--line);
   text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.md td code {
+  white-space: nowrap;
 }
 .md th {
   font-weight: 600;
@@ -348,6 +363,22 @@ pre[style*="--hls-dark"] span {
 .md img[width="16"],
 .md img[height="16"] {
   border-radius: 0;
+}
+/* A PR description, read as a document in its drawer. */
+.doc .md {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.doc :is(.md, .md > div) > :is(h1, h2, h3, h4):not(:first-child) {
+  margin-top: 1.6em;
+}
+.doc .md :is(h1, h2) {
+  font-size: 1.15em;
+  padding-bottom: 0.4em;
+  box-shadow: 0 1px 0 var(--line);
+}
+.doc .md h3 {
+  font-size: 1.02em;
 }
 .md pre.wrap {
   white-space: pre-wrap;

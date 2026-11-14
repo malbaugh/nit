@@ -44,6 +44,9 @@ test("checks: failures first, running next; annotations keep their lines", () =>
     state: "OPEN",
     body: "b",
     headRefOid: "abc",
+    isDraft: false,
+    createdAt: "2026-11-01T00:00:00Z",
+    author: null,
     commits: {
       nodes: [
         {
@@ -106,6 +109,9 @@ test("checks: a commit with no checks", () => {
     state: "OPEN",
     body: "",
     headRefOid: "x",
+    isDraft: false,
+    createdAt: "2026-11-01T00:00:00Z",
+    author: null,
     commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
   });
   expect(d.checks).toEqual([]);

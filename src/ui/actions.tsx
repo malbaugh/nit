@@ -10,6 +10,7 @@ import {
   DocMagnifyingGlass,
   EditPencil,
   Expand,
+  GitPullRequest,
   List,
   NavArrowDown,
   NavArrowUp,
@@ -167,6 +168,15 @@ export const actions: Action[] = [
     icon: <Sparks />,
     when: () => st.get().agent?.state !== "running" && st.get().job?.state !== "running",
     run: () => void agent.coreview(),
+  },
+  {
+    id: "pull-request",
+    group: "Review",
+    label: "Pull request: description and checks",
+    keys: [],
+    icon: <GitPullRequest />,
+    when: () => st.get().github?.status === "ready",
+    run: () => st.set({ prOpen: true }),
   },
   {
     id: "guide",
@@ -483,8 +493,15 @@ export function handleKey(e: KeyboardEvent) {
     st.finishEditing();
     return;
   }
-  // The sheet traps focus and handles Esc itself.
-  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen || s.agentOpen) return;
+  // The side sheets close on Esc wherever focus is: Silk only hears keys from inside a sheet.
+  if (e.key === "Escape" && (s.agentOpen || s.prOpen) && !s.palette && !typing) {
+    e.preventDefault();
+    st.set({ agentOpen: false, prOpen: false });
+    return;
+  }
+  // The sheets trap focus and handle their own keys.
+  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen || s.agentOpen || s.prOpen)
+    return;
   if (e.key === "Escape") {
     if (s.asking) st.set({ asking: null });
     else if (s.peek) nav.closePeek();

@@ -103,6 +103,8 @@ export type State = {
   agent: AgentRun | null;
   agentActivity: AgentActivity[];
   agentOpen: boolean;
+  /** The pull request drawer: description, checks, the Linear issue. */
+  prOpen: boolean;
   /** Claude's co-review or question in progress, or the last one. */
   job: Job | null;
   /** The lines an "Ask Claude" box is open on, before (or between) questions. */
@@ -166,6 +168,7 @@ let state: State = {
   agent: null,
   agentActivity: [],
   agentOpen: false,
+  prOpen: false,
   job: null,
   asking: null,
   view: "review",

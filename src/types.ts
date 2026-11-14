@@ -174,6 +174,9 @@ export type GitHubState =
       threads: Thread[];
       /** The PR's description, as written (Markdown). */
       body: string;
+      author: { login: string; avatar: string } | null;
+      draft: boolean;
+      openedAt: number;
       checks: Check[];
       annotations: CheckAnnotation[];
       /** Whether local lines match the PR: same commit and nothing uncommitted. */

@@ -196,6 +196,9 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
       viewer: c.viewer,
       threads,
       body: details.body,
+      author: details.author,
+      draft: details.draft,
+      openedAt: details.openedAt,
       checks: details.checks,
       annotations: details.annotations,
       local: { headSha, dirty: status !== "" },
@@ -207,7 +210,7 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
     const r = await c.octokit.graphql<{ repository: { pullRequest: DetailsNode } }>(
       `query($owner: String!, $name: String!, $number: Int!) {
         repository(owner: $owner, name: $name) { pullRequest(number: $number) {
-          title state body headRefOid
+          title state body headRefOid isDraft createdAt author { login avatarUrl }
           commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
             __typename
             ... on CheckRun { name status conclusion detailsUrl title
@@ -347,6 +350,9 @@ type DetailsNode = {
   state: string;
   body: string;
   headRefOid: string;
+  isDraft: boolean;
+  createdAt: string;
+  author: { login: string; avatarUrl: string } | null;
   commits: {
     nodes: {
       commit: {
@@ -428,6 +434,9 @@ export function toDetails(p: DetailsNode) {
   return {
     pr: { title: p.title, state: p.state, headSha: p.headRefOid },
     body: p.body,
+    author: p.author ? { login: p.author.login, avatar: p.author.avatarUrl } : null,
+    draft: p.isDraft,
+    openedAt: Date.parse(p.createdAt),
     checks,
     annotations,
   };
