@@ -1,6 +1,5 @@
 import { readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import tailwind from "bun-plugin-tailwind";
 
 const root = join(import.meta.dir, "..");
 /** Dev servers (NIT_DEV=1) build apart, so a dev run never swaps the UI under a running nit. */
@@ -40,6 +39,8 @@ export function buildUI(dir: string) {
 
 async function build(dir: string) {
   rmSync(dir, { recursive: true, force: true });
+  // Loaded only when building: the single binary carries a built UI and no Tailwind.
+  const { default: tailwind } = await import("bun-plugin-tailwind");
   const result = await Bun.build({
     entrypoints: [join(import.meta.dir, "ui/index.html")],
     outdir: dir,

@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
 import { Language, type Node, Parser, Query, type Tree } from "@vscode/tree-sitter-wasm";
+import { embedded } from "./embedded";
 import csharp from "./queries/c-sharp.scm" with { type: "text" };
 import cpp from "./queries/cpp.scm" with { type: "text" };
 import go from "./queries/go.scm" with { type: "text" };
@@ -77,10 +78,20 @@ const BY_EXT: Record<string, Grammar> = {
 
 export const grammarFor = (path: string): Grammar | null => BY_EXT[extname(path).toLowerCase()] ?? null;
 
-const wasmDir = join(dirname(createRequire(import.meta.url).resolve("@vscode/tree-sitter-wasm/package.json")), "wasm");
+/** A grammar's .wasm: baked into the binary, or from the package on disk. */
+let wasmDir: string | undefined;
+function wasm(file: string) {
+  const inside = embedded.wasm.get(file);
+  if (inside) return inside;
+  wasmDir ??= join(dirname(createRequire(import.meta.url).resolve("@vscode/tree-sitter-wasm/package.json")), "wasm");
+  return join(wasmDir, file);
+}
+/** Every .wasm nit loads, for scripts/compile.ts to bake in. */
+export const WASM_FILES = ["tree-sitter.wasm", ...new Set(Object.values(GRAMMARS).map((g) => g.wasm))];
+
 let ready: Promise<void> | null = null;
 function init() {
-  if (!ready) ready = Parser.init({ locateFile: (f: string) => join(wasmDir, f) });
+  if (!ready) ready = Parser.init({ locateFile: (f: string) => wasm(f) });
   return ready;
 }
 
@@ -92,7 +103,7 @@ export function load(grammar: Grammar): Promise<Loaded> {
   if (!p) {
     p = (async () => {
       await init();
-      const language = await Language.load(join(wasmDir, GRAMMARS[grammar].wasm));
+      const language = await Language.load(wasm(GRAMMARS[grammar].wasm));
       const parser = new Parser();
       parser.setLanguage(language);
       const g = GRAMMARS[grammar];

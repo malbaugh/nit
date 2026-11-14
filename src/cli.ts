@@ -24,6 +24,7 @@ import {
   REVIEW_INSTRUCTIONS,
   reviewPrompt,
 } from "./coreview";
+import { compiled, embedded, VERSION } from "./embedded";
 import * as git from "./git";
 import { createGitHub, account as githubAccount, parseRemote, saveToken } from "./github";
 import { changedPaths, type Guidelines, guidelinesBlock, guidelineText, loadGuidelines } from "./guidelines";
@@ -38,6 +39,24 @@ import type { AskThread, Draft, FileContents, GuideChapter, ReviewData, ReviewEv
 
 const dev = process.env.NIT_DEV === "1";
 const uiDir = uiDirFor(dev);
+
+if (process.argv[2] === "--version" || process.argv[2] === "-v") {
+  console.log(VERSION);
+  process.exit(0);
+}
+if (process.argv[2] === "--help" || process.argv[2] === "-h") {
+  console.log(`nit ${VERSION}: keyboard-first local code review
+
+  nit                 review this branch against its default base
+  nit <branch>        review against another branch
+  nit <pr>            review a pull request (number, #number or URL) in its own worktree
+
+https://sidwebworks.com/things/nit`);
+  process.exit(0);
+}
+/** A file of the browser UI: baked into the binary, or built on disk. */
+const uiFile = (path: string) =>
+  compiled() ? Bun.file(embedded.ui.get(path) ?? "/nit-missing") : Bun.file(join(uiDir, path));
 
 const fail0 = term.fail;
 
@@ -133,7 +152,7 @@ github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
 
-if (dev || isStale(uiDir)) await buildUI(uiDir);
+if (!compiled() && (dev || isStale(uiDir))) await buildUI(uiDir);
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (status: number, error: string) => json({ error }, status);
@@ -814,14 +833,14 @@ const serve = (p: number) =>
       if (dev && path === "/" && isStale(uiDir)) await buildUI(uiDir);
       if (path === "/") {
         // The saved theme goes in before first paint, so the page never flashes the default.
-        const html = await Bun.file(join(uiDir, "index.html")).text();
+        const html = await uiFile("/index.html").text();
         const inline = (v: unknown) => JSON.stringify(v).replaceAll("<", "\\u003c");
         const settings = `window.nitTheme=${inline(store.setting("theme"))};window.nitLayout=${inline(store.setting("layout"))};window.nitPrefs=${inline(prefsOf(store))};`;
         return new Response(html.replace("</head>", `<script>${settings}${themeBoot}</script></head>`), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }
-      const file = Bun.file(join(uiDir, path));
+      const file = uiFile(path);
       if (path.includes("..") || !(await file.exists())) return fail(404, "not found");
       // Chunk names carry a content hash: the browser can keep them for good.
       return new Response(file, {

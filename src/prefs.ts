@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { childEnv } from "./child-env";
+import { compiled } from "./embedded";
 import type { Store } from "./store";
 import { DEFAULT_PREFS, type Prefs } from "./types";
 
@@ -65,8 +66,21 @@ export async function claudeEnv(p: Pick<Prefs, "auth">): Promise<Record<string, 
 }
 
 /** The SDK options the preferences set: only what isn't Claude Code's default. */
+/**
+ * The single binary doesn't carry Claude Code (it's 300 MB): it runs the one you installed.
+ * Run from source, the Agent SDK brings its own.
+ */
+function claudeExecutable() {
+  if (!compiled()) return {};
+  const bin = Bun.which("claude");
+  if (!bin)
+    throw new Error("nit needs Claude Code for this. Install it (https://claude.com/claude-code) and try again.");
+  return { pathToClaudeCodeExecutable: bin };
+}
+
 export async function claudeOptions(p: Prefs, kind: "ask" | "review" | "guide" | "apply" = "review") {
   return {
+    ...claudeExecutable(),
     env: await claudeEnv(p),
     // Only nit's own tools. Your account's claude.ai connectors and MCP servers added ~400K tokens
     // of tool definitions to every turn after the first tool call, and your auto-memory notes
