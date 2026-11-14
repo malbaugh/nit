@@ -63,6 +63,8 @@ type State = {
   settingsOpen: boolean;
   searchOpen: boolean;
   browse: Browse | null;
+  /** A draft's lines being edited in the diff to make its suggestion (suggest.ts). */
+  suggesting: { draftId: string; path: string; start: number; end: number; ending: boolean } | null;
   widths: Widths;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
@@ -103,6 +105,7 @@ let state: State = {
   settingsOpen: false,
   searchOpen: false,
   browse: null,
+  suggesting: null,
   widths: { files: savedLayout.files ?? DEFAULT_WIDTHS.files, outline: savedLayout.outline ?? DEFAULT_WIDTHS.outline },
   github: null,
   fullFiles: new Set(),
@@ -520,21 +523,6 @@ export function removeDraft(id: string, offerUndo = true) {
       set((s) => ({ drafts: [...s.drafts, d], focused: d.id }));
       persist(d, 0);
     });
-}
-
-export async function suggest(id: string) {
-  const d = state.drafts.find((x) => x.id === id);
-  if (!d || d.side !== "additions" || d.start === 0) return;
-  const file = state.files.find((f) => f.name === d.path);
-  const text = d.anchor.length || !file ? null : await fileContents(file).catch(() => null);
-  const lines = text ? (text.new ?? "").split("\n").slice(d.start - 1, d.end) : d.anchor;
-  if (text)
-    set((s) => ({
-      drafts: s.drafts.map((x) => (x.id === id ? { ...x, anchor: lines } : x)),
-    }));
-  updateDraft(id, {
-    suggestion: state.drafts.find((x) => x.id === id)?.suggestion ?? lines.join("\n"),
-  });
 }
 
 export async function applySuggestion(id: string) {

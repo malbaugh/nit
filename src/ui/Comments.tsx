@@ -19,6 +19,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "re
 import type { Draft } from "../types";
 import * as md from "./markdown-edit";
 import * as st from "./state";
+import * as suggest from "./suggest";
 import { Button, IconButton, Kbd } from "./ui";
 
 // The Markdown parser is the heaviest piece of the UI; load it after the diff has painted.
@@ -131,11 +132,9 @@ function shortcut(e: React.KeyboardEvent): ((s: md.Sel) => md.Edit) | null {
 
 function Composer({ draft }: { draft: Draft }) {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const suggestionRef = useRef<HTMLTextAreaElement>(null);
   const saving = st.useStore((s) => s.saving[draft.id]);
   const [preview, setPreview] = useState(false);
   useAutoGrow(bodyRef, draft.body);
-  useAutoGrow(suggestionRef, draft.suggestion ?? "");
   const canSuggest = draft.side === "additions" && draft.start > 0;
 
   // Pierre mounts annotations a frame or two after React renders them; keep trying until focus lands.
@@ -160,11 +159,9 @@ function Composer({ draft }: { draft: Draft }) {
     requestAnimationFrame(() => md.apply(el, run({ value: el.value, start: el.selectionStart, end: el.selectionEnd })));
   };
 
-  const toggleSuggestion = () => {
-    if (!canSuggest) return;
-    if (draft.suggestion === null)
-      void st.suggest(draft.id).then(() => requestAnimationFrame(() => suggestionRef.current?.focus()));
-    else st.updateDraft(draft.id, { suggestion: null });
+  // A suggestion is typed into the diff itself (suggest.ts), not into a box here.
+  const editSuggestion = () => {
+    if (canSuggest) void suggest.start(draft.id);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -182,7 +179,7 @@ function Composer({ draft }: { draft: Draft }) {
     }
     if (mod && e.shiftKey && e.key.toLowerCase() === "s") {
       e.preventDefault();
-      toggleSuggestion();
+      editSuggestion();
       return;
     }
     if (e.target !== bodyRef.current) return;
@@ -282,25 +279,20 @@ function Composer({ draft }: { draft: Draft }) {
             className="block max-h-[50vh] min-h-[76px] w-full resize-none bg-transparent px-3.5 py-3 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3"
           />
           {draft.suggestion !== null ? (
-            <div className="mx-3 mb-3 overflow-hidden rounded-control shadow-[0_0_0_1px_var(--line)]">
-              <div className="flex h-7 items-center bg-inset px-2.5 text-[11.5px] font-medium text-ink-3 shadow-[0_1px_0_var(--line)]">
-                Suggested change
-                <button
-                  type="button"
-                  onClick={toggleSuggestion}
-                  className="ml-auto text-ink-3 transition-colors duration-100 [@media(hover:hover)]:hover:text-red"
+            <div className="mx-3 mb-3">
+              <SuggestionDiff before={draft.anchor} after={draft.suggestion.split("\n")} />
+              <div className="mt-1.5 flex items-center gap-1">
+                <Button tone="ghost" className="h-6 px-2" onClick={editSuggestion}>
+                  <EditPencil width={13} height={13} /> Edit in diff
+                </Button>
+                <Button
+                  tone="ghost"
+                  className="h-6 px-2 [@media(hover:hover)]:hover:text-red"
+                  onClick={() => st.updateDraft(draft.id, { suggestion: null })}
                 >
                   Remove
-                </button>
+                </Button>
               </div>
-              <textarea
-                ref={suggestionRef}
-                value={draft.suggestion}
-                onChange={(e) => st.updateDraft(draft.id, { suggestion: e.target.value })}
-                aria-label="Suggested change"
-                spellCheck={false}
-                className="block w-full resize-none bg-green-tint px-2.5 py-2 font-mono text-[12.5px] leading-5 text-ink outline-none"
-              />
             </div>
           ) : null}
         </>
@@ -310,11 +302,11 @@ function Composer({ draft }: { draft: Draft }) {
         {canSuggest ? (
           <button
             type="button"
-            onClick={toggleSuggestion}
+            onClick={editSuggestion}
             className="flex items-center gap-1.5 transition-colors duration-100 [@media(hover:hover)]:hover:text-ink"
           >
             <Kbd k="Mod+Shift+s" quiet />
-            {draft.suggestion === null ? "Suggest a change" : "Remove suggestion"}
+            {draft.suggestion === null ? "Suggest a change" : "Edit suggestion"}
           </button>
         ) : null}
         <span className="flex items-center gap-1.5">

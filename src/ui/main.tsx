@@ -1,9 +1,10 @@
 import { Toast } from "@base-ui/react/toast";
+import { EditProvider } from "@pierre/diffs/react";
 import { IconoirProvider } from "iconoir-react";
 import { Check, GitCompare, WarningCircle } from "iconoir-react/regular";
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { handleKey } from "./actions";
+import { handleKey, handleSuggestKey } from "./actions";
 import { DiffPane } from "./DiffPane";
 import { FileList } from "./FileList";
 import { FilePane } from "./FilePane";
@@ -14,6 +15,7 @@ import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
 import { SearchWindow } from "./Search";
 import * as st from "./state";
+import { createEditor } from "./suggest";
 import { theme } from "./theme";
 import { toasts } from "./toasts";
 import { EmptyState, Kbd, TooltipProvider } from "./ui";
@@ -65,6 +67,7 @@ function App() {
     // Threads refresh every minute while the tab is visible (and when you come back to it).
     const poll = setInterval(() => document.visibilityState === "visible" && st.loadGitHub(), 60_000);
     window.addEventListener("keydown", handleKey);
+    window.addEventListener("keydown", handleSuggestKey, true);
     // Coming back to the tab picks up edits made in the editor or by an agent.
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
@@ -75,6 +78,7 @@ function App() {
     return () => {
       clearInterval(poll);
       window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("keydown", handleSuggestKey, true);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
@@ -115,7 +119,9 @@ createRoot(document.getElementById("root")!).render(
     <TooltipProvider>
       <Toast.Provider toastManager={toasts} limit={3}>
         <HighlightPool>
-          <App />
+          <EditProvider createEditor={createEditor}>
+            <App />
+          </EditProvider>
         </HighlightPool>
         <Toasts />
       </Toast.Provider>

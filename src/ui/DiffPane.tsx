@@ -1,4 +1,9 @@
-import type { DiffLineAnnotation, DiffTokenEventBaseProps, SelectedLineRange } from "@pierre/diffs";
+import type {
+  DiffLineAnnotation,
+  DiffTokenEventBaseProps,
+  FileDiffEditCompleteEvent,
+  SelectedLineRange,
+} from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   AlignJustify,
@@ -17,11 +22,36 @@ import * as nav from "./nav";
 import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
+import * as suggest from "./suggest";
 import { ThreadAnnotation } from "./Threads";
 import { useTheme } from "./theme";
-import { basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
+import { Button, basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
 
-type Meta = { id: string } | { peek: true } | { thread: string };
+type Meta = { id: string } | { peek: true } | { thread: string } | { suggesting: true };
+
+/** Under the lines being edited into a suggestion: what's happening and how to finish. */
+function SuggestingBar() {
+  const sg = st.useStore((s) => s.suggesting);
+  if (!sg) return null;
+  return (
+    <div className="px-3 py-1.5 font-sans">
+      <div className="flex min-h-9 max-w-[780px] flex-wrap items-center gap-x-3 gap-y-1 rounded-card bg-surface px-3 py-1.5 text-[12.5px] shadow-[0_0_0_1px_var(--accent),0_0_0_4px_var(--accent-tint)]">
+        <span className="text-ink">
+          Suggesting a change to {sg.start === sg.end ? `line ${sg.start}` : `lines ${sg.start}–${sg.end}`}
+        </span>
+        <span className="text-ink-3">Edit the code above</span>
+        <span className="ml-auto flex items-center gap-2">
+          <Button tone="ghost" className="h-6 px-2" onClick={() => suggest.finish(false)}>
+            Cancel <span className="opacity-70">Esc</span>
+          </Button>
+          <Button tone="primary" className="h-6 px-2" onClick={() => suggest.finish(true)}>
+            Done <span className="opacity-70">{"⌘↵"}</span>
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** Pierre draws lines inside a shadow root; find the row for one side + line number. */
 function findRow(side: "additions" | "deletions", line: number) {
@@ -128,6 +158,13 @@ export function DiffPane() {
   );
 
   const peekAt = st.useStore((s) => s.peek?.at);
+  const suggesting = st.useStore((s) => s.suggesting);
+  const suggestingHere = suggesting && file && suggesting.path === file.name ? suggesting : null;
+  // Always reject: the review's diff never changes; suggest.complete keeps the edited lines.
+  const onEditComplete = useCallback((event: FileDiffEditCompleteEvent<Meta, undefined>) => {
+    void suggest.complete(event as FileDiffEditCompleteEvent<unknown, undefined>);
+    return "reject" as const;
+  }, []);
   const threads = st.useStore((s) => (s.github?.status === "ready" ? s.github.threads : null));
   const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
   const sidebar = st.useStore((s) => s.sidebar);
@@ -141,8 +178,10 @@ export function DiffPane() {
     if (!file) return [];
     // Replies render inside their thread, not on their own.
     const list: DiffLineAnnotation<Meta>[] = drafts
-      .filter((d) => d.path === file.name && !d.replyTo)
+      .filter((d) => d.path === file.name && !d.replyTo && d.id !== suggestingHere?.draftId)
       .map((d) => ({ side: d.side, lineNumber: d.end, metadata: { id: d.id } }));
+    if (suggestingHere)
+      list.push({ side: "additions", lineNumber: suggestingHere.end, metadata: { suggesting: true } });
     for (const t of threads ?? []) {
       if (t.path !== file.name) continue;
       // File-level and outdated threads sit above the first change.
@@ -155,13 +194,13 @@ export function DiffPane() {
     }
     if (peekAt) list.push({ side: peekAt.side, lineNumber: peekAt.line, metadata: { peek: true } });
     return list;
-  }, [drafts, file, peekAt, threads]);
+  }, [drafts, file, peekAt, threads, suggestingHere]);
 
   const selected = useMemo<SelectedLineRange | null>(() => {
-    if (!cursor) return null;
+    if (!cursor || suggestingHere) return null; // the editor owns the selection while suggesting
     const from = anchor ?? cursor;
     return { start: from.line, side: from.side, end: cursor.line, endSide: cursor.side };
-  }, [cursor, anchor]);
+  }, [cursor, anchor, suggestingHere]);
 
   useEffect(() => {
     if (cursor) revealLine(cursor.side, cursor.line);
@@ -169,7 +208,9 @@ export function DiffPane() {
 
   const renderAnnotation = useCallback(
     (a: DiffLineAnnotation<Meta>) =>
-      "peek" in a.metadata ? (
+      "suggesting" in a.metadata ? (
+        <SuggestingBar />
+      ) : "peek" in a.metadata ? (
         <PeekAnnotation />
       ) : "thread" in a.metadata ? (
         <ThreadAnnotation id={a.metadata.thread} />
@@ -264,6 +305,8 @@ export function DiffPane() {
           lineAnnotations={annotations}
           renderAnnotation={renderAnnotation}
           selectedLines={selected}
+          edit={!!suggestingHere && !suggestingHere.ending}
+          onEditComplete={onEditComplete}
         />
       </div>
     </main>

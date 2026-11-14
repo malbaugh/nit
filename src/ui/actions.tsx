@@ -25,6 +25,7 @@ import {
 import type { ReactNode } from "react";
 import * as nav from "./nav";
 import * as st from "./state";
+import * as suggest from "./suggest";
 
 export type Action = {
   id: string;
@@ -142,6 +143,19 @@ export const actions: Action[] = [
     keys: ["Mod+Shift+Enter"],
     icon: <ChatLines />,
     run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
+  {
+    id: "suggest",
+    group: "Review",
+    label: "Suggest a change to these lines",
+    keys: ["Mod+Shift+s"],
+    icon: <EditPencil />,
+    when: () => st.get().cursor?.side === "additions",
+    run: () => {
+      st.startComment();
+      const id = st.get().editing;
+      if (id) void suggest.start(id);
+    },
   },
   {
     id: "search",
@@ -351,11 +365,29 @@ export function keyLabel(k: string) {
 
 let pendingG = 0;
 
+/**
+ * Capture phase, ahead of Pierre's editor: while suggesting, ⌘↵ keeps the edit and Esc drops
+ * it. Otherwise the editor would act on them first (⌘↵ inserts a line).
+ */
+export function handleSuggestKey(e: KeyboardEvent) {
+  if (!st.get().suggesting) return;
+  const name = keyName(e);
+  if (name !== "Mod+Enter" && e.key !== "Escape") return;
+  e.preventDefault();
+  e.stopPropagation();
+  suggest.finish(name === "Mod+Enter");
+}
+
 export function handleKey(e: KeyboardEvent) {
   const s = st.get();
   const name = keyName(e);
-  const el = e.target instanceof HTMLElement ? e.target : null;
-  const typing = !!el?.closest("input, textarea, [contenteditable=true]");
+  // The real target: editors inside a shadow root (Pierre's) report their host as e.target.
+  const inner = e.composedPath()[0];
+  const el = inner instanceof HTMLElement ? inner : e.target instanceof HTMLElement ? e.target : null;
+  const typing = !!el && (el.isContentEditable || !!el.closest("input, textarea, [contenteditable=true]"));
+  // While a suggestion is being typed into the diff, the editor has the keyboard
+  // (handleSuggestKey takes ⌘↵ and Esc before it).
+  if (s.suggesting) return;
   // Inside the comment editor ⌘K inserts a link, as on GitHub.
   if (name === "Mod+k" && el?.closest("[data-md-editor]")) return;
   if (name === "Mod+k" || name === "Mod+p") {
