@@ -1,0 +1,304 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@source "./";
+
+/* Tokens are Beautiful UI's (beautifului.dev, MIT): cool OKLCH neutrals, crisp
+   hairlines, layered single-digit shadows, colour used sparingly. Dark is the
+   default; light follows the system setting. */
+:root {
+  color-scheme: dark;
+  --page: oklch(0.209 0.004 264.477);
+  --canvas: oklch(0.231 0.004 264.487);
+  --surface: oklch(0.26 0.006 271.191);
+  --inset: oklch(0.243 0.004 264.492);
+  --hover: oklch(0.289 0.006 271.22);
+  --hover-2: oklch(0.318 0.007 274.747);
+  --ink: oklch(0.964 0.002 247.839);
+  --ink-2: oklch(0.731 0.008 260.731);
+  --ink-3: oklch(0.541 0.01 264.484);
+  --line: oklch(0.308 0.006 258.354);
+  --line-strong: oklch(0.356 0.007 264.474);
+  --line-soft: oklch(0.278 0.006 258.354);
+  --field: oklch(0.293 0.006 271.223);
+  --accent: oklch(0.68 0.173 253.301);
+  --accent-ink: oklch(0.788 0.113 248.33);
+  --accent-tint: oklch(0.68 0.173 253.301 / 0.16);
+  --green: oklch(0.705 0.154 153.814);
+  --green-tint: oklch(0.705 0.154 153.814 / 0.14);
+  --orange: oklch(0.746 0.156 55.642);
+  --orange-tint: oklch(0.746 0.156 55.642 / 0.14);
+  --red: oklch(0.666 0.18 21.433);
+  --red-tint: oklch(0.666 0.18 21.433 / 0.14);
+  --tooltip-bg: oklch(0.182 0.004 264.459);
+  --tooltip-fg: oklch(0.964 0.002 247.839);
+  /* In dark mode the elevation ring is a faint light edge that melts into the shadow. */
+  --shadow-btn: 0 0 0 1px oklch(1 0 0 / 0.1), 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.11), 0 1px 2px oklch(0 0 0 / 0.2), 0 2px 6px oklch(0 0 0 / 0.2);
+  --shadow-raised: 0 0 0 1px oklch(1 0 0 / 0.13), 0 2px 10px oklch(0 0 0 / 0.22);
+  --shadow-overlay: 0 0 0 1px oklch(1 0 0 / 0.15), 0 8px 28px oklch(0 0 0 / 0.34);
+  --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page: oklch(0.985 0.001 286.376);
+    --canvas: oklch(0.975 0.002 247.84);
+    --surface: oklch(1 0 0);
+    --inset: oklch(0.979 0.002 247.839);
+    --hover: oklch(0.97 0.002 247.839);
+    --hover-2: oklch(0.933 0.003 247.86);
+    --ink: oklch(0.247 0.006 258.361);
+    --ink-2: oklch(0.506 0.01 264.477);
+    --ink-3: oklch(0.62 0.009 264.505);
+    --line: oklch(0.932 0.003 264.542);
+    --line-strong: oklch(0.9 0.005 258.326);
+    --line-soft: oklch(0.955 0.002 264.542);
+    --field: oklch(0.961 0.001 286.375);
+    --accent: oklch(0.626 0.205 254.947);
+    --accent-ink: oklch(0.556 0.187 255.617);
+    --accent-tint: oklch(0.626 0.205 254.947 / 0.1);
+    --green: oklch(0.603 0.155 150.883);
+    --green-tint: oklch(0.603 0.155 150.883 / 0.1);
+    --orange: oklch(0.66 0.17 52);
+    --orange-tint: oklch(0.689 0.179 49.902 / 0.1);
+    --red: oklch(0.621 0.192 23.042);
+    --red-tint: oklch(0.621 0.192 23.042 / 0.1);
+    --tooltip-bg: oklch(0.272 0.008 264.435);
+    --tooltip-fg: oklch(0.976 0.002 247.839);
+    --shadow-btn: 0 0 0 1px var(--line-strong), 0 1px 2px oklch(0.2 0.02 264 / 0.05);
+    --shadow-card: 0 0 0 1px var(--line), 0 1px 2px oklch(0.2 0.02 264 / 0.04), 0 2px 6px oklch(0.2 0.02 264 / 0.04);
+    --shadow-raised: 0 0 0 1px var(--line), 0 2px 4px oklch(0.2 0.02 264 / 0.04), 0 6px 16px oklch(0.2 0.02 264 / 0.06);
+    --shadow-overlay:
+      0 0 0 1px var(--line), 0 4px 8px oklch(0.2 0.02 264 / 0.05), 0 16px 40px oklch(0.2 0.02 264 / 0.12);
+    --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.06);
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --color-page: var(--page);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-hover: var(--hover);
+  --color-hover-2: var(--hover-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-line-soft: var(--line-soft);
+  --color-field: var(--field);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-tint: var(--accent-tint);
+  --color-green: var(--green);
+  --color-green-tint: var(--green-tint);
+  --color-orange: var(--orange);
+  --color-orange-tint: var(--orange-tint);
+  --color-red: var(--red);
+  --color-red-tint: var(--red-tint);
+  --color-tooltip: var(--tooltip-bg);
+  --color-tooltip-fg: var(--tooltip-fg);
+  --shadow-btn: var(--shadow-btn);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-inset-field: var(--shadow-inset-field);
+  /* chips 6, controls 8, cards 10, windows 14 */
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-window: 14px;
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    font-feature-settings: "cv11", "ss01";
+  }
+  :focus-visible {
+    outline: 2px solid color-mix(in oklch, var(--accent) 70%, transparent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--accent-tint);
+    color: var(--ink);
+  }
+  p {
+    text-wrap: pretty;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* The diff shares the app's surfaces, fonts and colours. */
+diffs-container {
+  --diffs-font-family: var(--font-mono);
+  --diffs-header-font-family: var(--font-sans);
+  --diffs-font-size: 12.5px;
+  --diffs-line-height: 20px;
+  --diffs-bg-buffer-override: var(--page);
+  --diffs-bg-context-override: var(--page);
+  --diffs-bg-context-gutter-override: var(--page);
+  --diffs-bg-separator-override: var(--canvas);
+  --diffs-fg-number-override: var(--ink-3);
+  --diffs-bg-selection-override: var(--accent-tint);
+  --diffs-bg-selection-number-override: var(--accent-tint);
+  --diffs-addition-color-override: var(--green);
+  --diffs-deletion-color-override: var(--red);
+}
+
+/* Highlighted code inside comments (Shiki dual themes). */
+.md pre[style*="--shiki-dark"],
+.md pre[style*="--shiki-dark"] span {
+  color: var(--shiki-dark);
+  /* biome-ignore lint/complexity/noImportantStyles: Shiki writes inline backgrounds */
+  background-color: transparent !important;
+}
+@media (prefers-color-scheme: light) {
+  .md pre[style*="--shiki-dark"],
+  .md pre[style*="--shiki-dark"] span {
+    color: var(--shiki-light);
+  }
+}
+
+/* Rendered Markdown in comments: GitHub's structure, nit's type. */
+.md {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.md > * + * {
+  margin-top: 0.6em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.md h1 {
+  font-size: 1.35em;
+}
+.md h2 {
+  font-size: 1.2em;
+}
+.md h3 {
+  font-size: 1.05em;
+}
+.md a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--accent-ink) 35%, transparent);
+  text-underline-offset: 2px;
+}
+.md a:hover {
+  text-decoration-color: currentColor;
+}
+.md strong {
+  font-weight: 600;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 0.12em 0.35em;
+  border-radius: 5px;
+  background: var(--hover);
+}
+.md pre {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--inset);
+  box-shadow: 0 0 0 1px var(--line);
+  overflow-x: auto;
+}
+.md pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li + li {
+  margin-top: 0.2em;
+}
+.md li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.md li.task-list-item input {
+  margin-right: 0.45em;
+  accent-color: var(--accent);
+  vertical-align: -1px;
+}
+.md blockquote {
+  padding-left: 0.85em;
+  color: var(--ink-2);
+  box-shadow: inset 2px 0 0 var(--line-strong);
+}
+.md hr {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+}
+.md table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.md th,
+.md td {
+  padding: 4px 10px;
+  box-shadow: 0 0 0 0.5px var(--line);
+  text-align: left;
+}
+.md th {
+  font-weight: 600;
+  background: var(--inset);
+}
+.md img {
+  max-width: 100%;
+  border-radius: var(--radius-control);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    /* biome-ignore lint/complexity/noImportantStyles: must beat every component's transition */
+    transition-duration: 0ms !important;
+  }
+}

@@ -1,0 +1,254 @@
+import {
+  ArrowDown,
+  ArrowUp,
+  ChatLines,
+  ChatPlusIn,
+  CheckCircle,
+  EditPencil,
+  NavArrowDown,
+  NavArrowUp,
+  Page,
+  Refresh,
+  SidebarCollapse,
+  Trash,
+  Undo,
+  ViewColumns2,
+} from "iconoir-react/regular";
+import type { ReactNode } from "react";
+import * as st from "./state";
+
+export type Action = {
+  id: string;
+  label: string;
+  group: "Review" | "Navigate" | "View";
+  /** Shown in the palette and tooltips; also what handleKey matches. */
+  keys: string[];
+  icon: ReactNode;
+  run: () => void;
+  when?: () => boolean;
+  /** Keyboard-only helpers (moving the cursor) stay out of the palette. */
+  hidden?: boolean;
+};
+
+const focusedDraft = () => st.get().drafts.find((d) => d.id === st.get().focused);
+
+/** One list for the keyboard and the palette: every action has a key, every key is discoverable. */
+export const actions: Action[] = [
+  {
+    id: "comment",
+    group: "Review",
+    label: "Comment on selected lines",
+    keys: ["c"],
+    icon: <ChatPlusIn />,
+    run: st.startComment,
+  },
+  {
+    id: "comment-file",
+    group: "Review",
+    label: "Comment on file",
+    keys: ["C"],
+    icon: <ChatLines />,
+    run: st.startFileComment,
+  },
+  {
+    id: "viewed",
+    group: "Review",
+    label: "Mark file as viewed",
+    keys: ["v"],
+    icon: <CheckCircle />,
+    run: () => st.toggleViewed(),
+  },
+  {
+    id: "next-comment",
+    group: "Review",
+    label: "Next comment",
+    keys: ["]"],
+    icon: <NavArrowDown />,
+    run: () => st.jumpDraft(1),
+  },
+  {
+    id: "prev-comment",
+    group: "Review",
+    label: "Previous comment",
+    keys: ["["],
+    icon: <NavArrowUp />,
+    run: () => st.jumpDraft(-1),
+  },
+  {
+    id: "edit-comment",
+    group: "Review",
+    label: "Edit comment",
+    keys: ["e"],
+    icon: <EditPencil />,
+    when: () => !!focusedDraft(),
+    run: () => st.editDraft(st.get().focused!),
+  },
+  {
+    id: "delete-comment",
+    group: "Review",
+    label: "Delete comment",
+    keys: ["Backspace"],
+    icon: <Trash />,
+    when: () => !!focusedDraft(),
+    run: () => st.removeDraft(st.get().focused!),
+  },
+  {
+    id: "apply-suggestion",
+    group: "Review",
+    label: "Apply suggestion to working tree",
+    keys: ["a"],
+    icon: <CheckCircle />,
+    when: () => focusedDraft()?.suggestion != null,
+    run: () => void st.applySuggestion(st.get().focused!),
+  },
+  { id: "undo", group: "Review", label: "Undo", keys: ["Mod+z"], icon: <Undo />, when: st.canUndo, run: st.undo },
+
+  {
+    id: "next-file",
+    group: "Navigate",
+    label: "Next file",
+    keys: ["j"],
+    icon: <ArrowDown />,
+    run: () => st.openFile(st.get().current + 1),
+  },
+  {
+    id: "prev-file",
+    group: "Navigate",
+    label: "Previous file",
+    keys: ["k"],
+    icon: <ArrowUp />,
+    run: () => st.openFile(st.get().current - 1),
+  },
+  {
+    id: "next-change",
+    group: "Navigate",
+    label: "Next change",
+    keys: ["n"],
+    icon: <NavArrowDown />,
+    run: () => st.nextChange(1),
+  },
+  {
+    id: "prev-change",
+    group: "Navigate",
+    label: "Previous change",
+    keys: ["p"],
+    icon: <NavArrowUp />,
+    run: () => st.nextChange(-1),
+  },
+  {
+    id: "files",
+    group: "Navigate",
+    label: "Go to file",
+    keys: ["Mod+p"],
+    icon: <Page />,
+    run: () => st.set({ palette: "files" }),
+  },
+  {
+    id: "line-down",
+    group: "Navigate",
+    label: "Next line",
+    keys: ["ArrowDown"],
+    icon: null,
+    hidden: true,
+    run: () => st.moveCursor(1),
+  },
+  {
+    id: "line-up",
+    group: "Navigate",
+    label: "Previous line",
+    keys: ["ArrowUp"],
+    icon: null,
+    hidden: true,
+    run: () => st.moveCursor(-1),
+  },
+  {
+    id: "extend-down",
+    group: "Navigate",
+    label: "Extend selection down",
+    keys: ["Shift+ArrowDown"],
+    icon: null,
+    hidden: true,
+    run: () => st.moveCursor(1, true),
+  },
+  {
+    id: "extend-up",
+    group: "Navigate",
+    label: "Extend selection up",
+    keys: ["Shift+ArrowUp"],
+    icon: null,
+    hidden: true,
+    run: () => st.moveCursor(-1, true),
+  },
+
+  {
+    id: "style",
+    group: "View",
+    label: "Toggle split / unified",
+    keys: ["s"],
+    icon: <ViewColumns2 />,
+    run: st.toggleStyle,
+  },
+  {
+    id: "sidebar",
+    group: "View",
+    label: "Toggle file list",
+    keys: ["Mod+\\"],
+    icon: <SidebarCollapse />,
+    run: () => st.set((s) => ({ sidebar: !s.sidebar })),
+  },
+  { id: "reload", group: "View", label: "Reload changes", keys: ["r"], icon: <Refresh />, run: () => void st.load() },
+];
+
+const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+
+export function keyName(e: KeyboardEvent) {
+  const parts = [];
+  if (e.metaKey || e.ctrlKey) parts.push("Mod");
+  if (e.shiftKey && e.key.length > 1) parts.push("Shift");
+  if (e.altKey) parts.push("Alt");
+  // Single characters keep their case ("C" is ⇧C) unless a modifier is held.
+  parts.push(e.key.length === 1 && (e.metaKey || e.ctrlKey || e.altKey) ? e.key.toLowerCase() : e.key);
+  return parts.join("+");
+}
+
+export function keyLabel(k: string) {
+  return k
+    .replace(/\+([a-z])$/, (_, c: string) => `+${c.toUpperCase()}`)
+    .replace("Mod+", isMac ? "⌘" : "Ctrl+")
+    .replace("Shift+", "⇧")
+    .replace("Enter", "↵")
+    .replace("ArrowDown", "↓")
+    .replace("ArrowUp", "↑")
+    .replace("Backspace", "⌫")
+    .replace(/^C$/, "⇧C");
+}
+
+export function handleKey(e: KeyboardEvent) {
+  const s = st.get();
+  const name = keyName(e);
+  const el = e.target instanceof HTMLElement ? e.target : null;
+  const typing = !!el?.closest("input, textarea, [contenteditable=true]");
+  // Inside the comment editor ⌘K inserts a link, as on GitHub.
+  if (name === "Mod+k" && el?.closest("[data-md-editor]")) return;
+  if (name === "Mod+k" || name === "Mod+p") {
+    e.preventDefault();
+    st.set({ palette: s.palette ? null : name === "Mod+p" ? "files" : "all" });
+    return;
+  }
+  // The palette and the composer handle their own keys. While a composer is open, stray
+  // letters typed before it takes focus must not trigger actions.
+  if (s.palette || typing || s.editing) return;
+  if (e.key === "Escape") {
+    if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
+    return;
+  }
+  if (e.key === "?") {
+    e.preventDefault();
+    st.set({ palette: "all" });
+    return;
+  }
+  const action = actions.find((a) => a.keys.includes(name) || (name === "Delete" && a.keys.includes("Backspace")));
+  if (!action || (action.when && !action.when())) return;
+  e.preventDefault();
+  action.run();
+}
