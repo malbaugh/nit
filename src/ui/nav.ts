@@ -197,7 +197,15 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
         150,
       );
       const r = await api.definition(at, target).finally(() => clearTimeout(slow));
-      if (r.results.length === 1) return openLocation(r.results[0]);
+      const only = r.results.length === 1 ? r.results[0] : null;
+      // ⌘-click on the definition itself: jumping to where you are only redraws the pane, so
+      // show who uses it instead, as editors do.
+      const here = only && only.path === at.path && only.line === at.line && cursor.side === "additions";
+      if (here && (r.name ?? name)) {
+        st.set({ peek: null });
+        return lookup("references", { name: (r.name ?? name) as string });
+      }
+      if (only) return openLocation(only);
       st.set({ peek: { ...base, kind: "definition", name: r.name, results: r.results, status: "ready" } });
     } else {
       const name = (target as { name: string }).name;
