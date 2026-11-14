@@ -2,13 +2,17 @@
 
 <h1 align="center">nit</h1>
 
-A keyboard-first code review tool that runs on your machine, with Claude as a second reader.
+A keyboard-first code review tool for engineers who read the code. Claude helps when you ask.
 
-`nit` opens your branch, or any pull request, as a page in your browser. You read it with the keyboard, leave comments, ask Claude about the parts you're unsure of, and post one review to GitHub when you're done.
+`nit` opens your branch, or any pull request, in your browser: a fast diff, code navigation that understands the language, search across the whole repository, and the keyboard for everything. You read, comment, and post one review to GitHub. Claude is there when you want a second reader, and stays out of the way when you don't.
 
 **[sidwebworks.com/things/nit](https://sidwebworks.com/things/nit)**
 
-![nit reviewing a pull request: the files in Claude's reading order, a side-by-side diff and the file's outline](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/hero.png)
+![nit reviewing a pull request: the files in reading order and a side-by-side diff](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/hero.png)
+
+- **Local.** One binary on your machine. Your reviews, drafts and keys never leave it.
+- **Keyboard first.** Every action has a key, and `⌘K` finds the rest.
+- **Assisted, not driven.** Claude answers when you ask. It never comments, approves or changes code on its own.
 
 ## Install
 
@@ -34,23 +38,27 @@ nit starts a local server and opens a tab. Press `⌘K` for every file and actio
 
 ## What it does
 
-**Read it in order.** Guide asks Claude to sort the files into a few chapters, the heart of the change first. Lockfiles, generated code, tests, docs and whitespace-only changes can be set aside, as your `.gitattributes` or plain conventions say.
+**Go to definition, without a language server.** nit reads the code with tree-sitter, in the diff and in any file you open: an outline of every file, go to definition, and find references, shown in place under the line. TypeScript, JavaScript, Python, Go, Rust, Java, C#, Ruby, PHP and C++, with nothing to install, configure or index.
 
-**Ask about any lines.** Select lines and press `⌘I`. Claude reads the code around them and the project's guidelines, and answers under the lines. Conversations are kept with the review and never posted.
+![Find references, shown in place under the line](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/references.png)
 
-![Asking Claude what could go wrong with the selected lines](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/ask.gif)
-
-**Comment, then post once.** Comments and suggested changes work as on GitHub, saved as you type. Post them all as one review, or hand them to Claude to apply.
-
-![Draft comments, one with a suggested change](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/comments.png)
-
-**Search the whole repo.** `⌘⇧F` searches every file, with results as code. `⌘`-click a name to peek at its definition.
+**Search the whole repository.** `⌘⇧F` searches every file, not just the diff, through [fff](https://github.com/dmtrKovalenko/fff)'s native index. Matches show as code, and stay highlighted in the file you open. Regex and case-sensitive search are a key away.
 
 ![Repository-wide search](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/search.png)
 
-**The whole pull request.** The description, the checks (with flagged lines in the diff) and the linked Linear issue. A viewed file that changes again is unmarked, and can show just what changed since you looked.
+**Claude, when you ask.** Select lines and press `⌘I`. Claude reads the code around them with the same navigation and search, checks the project's guidelines, and answers under the lines. It can also suggest an order to read the files in, or draft comments you accept or drop. Conversations stay on your machine.
 
-![The pull request drawer](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/pr.png)
+![Asking Claude about the selected lines](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/ask.gif)
+
+**Comments and suggestions, posted as one review.** `c` comments on the selected lines; a suggested change shows as a diff, as on GitHub. Drafts save as you type, and the review posts in one go: Comment, Approve or Request changes.
+
+![A draft comment with a suggested change](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/comment.png)
+
+**Make it yours.** Any Pierre or Shiki theme (one for light, one for dark), code size, layout and wrapping. `o` opens the file at the line in your editor, and pull requests check out with your own command. Settings live in `~/.config/nit/config.toml`; a repository's `.nit.toml` can override them.
+
+![Settings: your editor and checkout commands](https://raw.githubusercontent.com/sidwebworks/nit/main/docs/media/settings.png)
+
+**Also:** a reading order Claude suggests, setting aside lockfiles, generated code, tests, docs and whitespace-only changes, re-reviewing files that changed since you viewed them, and the pull request's description, checks, CI-flagged lines and linked Linear issue.
 
 ## Keyboard
 
@@ -60,8 +68,9 @@ nit starts a local server and opens a tab. Press `⌘K` for every file and actio
 | `n` `p` | Next and previous change |
 | `c` | Comment on the selected lines |
 | `⌘I` | Ask Claude about them |
-| `v` | Mark the file viewed |
 | `g` `d` | Go to definition |
+| `o` | Open in your editor |
+| `v` | Mark the file viewed |
 | `⌘⇧F` | Search the repository |
 | `⌘K` | Every file and action |
 | `⌘⇧↵` | Review and post |
@@ -70,7 +79,7 @@ nit starts a local server and opens a tab. Press `⌘K` for every file and actio
 
 - **git.** nit reviews the repository you run it in.
 - **GitHub**, for pull requests: your `gh` login, or a token saved in Settings (kept in your keychain).
-- **Claude**, for the Claude features: [Claude Code](https://claude.com/claude-code) installed, and an Anthropic API key saved in Settings. Everything else works without it.
+- **Claude**, optional: [Claude Code](https://claude.com/claude-code), signed in with your Claude account or an Anthropic API key saved in Settings. Everything else works without it.
 
 Reviews, drafts and settings stay on your machine, in `~/.local/share/nit` (or `$NIT_DATA_DIR`). nit talks to GitHub and Anthropic, and nothing else.
 
