@@ -17,6 +17,9 @@ const TOOL_VERB: Record<string, string> = {
   Read: "Reading",
   Grep: "Searching for",
   Glob: "Looking for",
+  grep: "Searching for",
+  multi_grep: "Searching for",
+  find_files: "Looking for",
   read_guideline: "Reading the guideline",
   file_diff: "Reading the diff of",
 };

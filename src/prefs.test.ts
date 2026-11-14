@@ -2,11 +2,17 @@ import { expect, test } from "bun:test";
 import { claudeEnv, claudeOptions, PrefsPatch } from "./prefs";
 import { DEFAULT_PREFS } from "./types";
 
-test("only what isn't Claude Code's default reaches the SDK", async () => {
+test("model and effort reach the SDK only when set; nit's runs never load your connectors or memory", async () => {
   const { env: _, ...rest } = await claudeOptions(DEFAULT_PREFS);
-  expect(rest).toEqual({});
-  const { env: __, ...set } = await claudeOptions({ ...DEFAULT_PREFS, model: "sonnet", effort: "high" });
-  expect(set).toEqual({ model: "sonnet", effort: "high" });
+  expect(rest).toEqual({
+    strictMcpConfig: true,
+    settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false },
+  });
+  const set = await claudeOptions({ ...DEFAULT_PREFS, model: "sonnet", effort: "high" });
+  expect([set.model, set.effort]).toEqual(["sonnet", "high"]);
+  // Questions default to low effort; your effort setting wins over that.
+  expect((await claudeOptions(DEFAULT_PREFS, "ask")).effort).toBe("low");
+  expect((await claudeOptions({ ...DEFAULT_PREFS, effort: "max" }, "ask")).effort).toBe("max");
 });
 
 test("Claude never gets a credential from nit's environment (a repo's .env); it uses its own login", async () => {

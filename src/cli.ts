@@ -67,7 +67,7 @@ const authStatus = createAuth(
 );
 agent.subscribe(term.agent);
 
-/** nit's own tools for Claude: guidelines from the base branch, and one file's diff. */
+/** nit's own tools for Claude: guidelines from the base branch, one file's diff, and fff search. */
 function claudeTools(
   guidelines: Guidelines,
   text: string,
@@ -88,6 +88,32 @@ function claudeTools(
       "The diff of one file in this pull request.",
       { path: z.string().describe("The file's path in the repo") },
       async ({ path }) => reply(fileDiff(text, path).slice(0, 60_000) || `${path} isn't changed by this pull request.`),
+    ),
+    // Search through fff's warm index of the repo (the one nit's own search uses), in place of
+    // Grep and Glob: no process per search, recently used and changed files first.
+    tool(
+      "grep",
+      "Search file contents. Search one bare identifier or literal (`getOnshapeOAuthConfig`), not code syntax or a regex spanning tokens. Constraints go first, space-separated: `*.ts`, `*.{ts,tsx}`, a directory like `packages/ee/`, or an exclusion like `!test/`. Results are by file, definitions marked [def]. After two searches, Read the best file instead of searching again.",
+      {
+        query: z.string().describe("Optional constraints, then the text: `packages/ee/ clientId`"),
+        regex: z.boolean().optional().describe("Treat the text as a regex; only when you need alternation or anchors"),
+      },
+      async ({ query, regex }) => reply(await nav.grepForClaude(query, regex ?? false)),
+    ),
+    tool(
+      "multi_grep",
+      "Search for any of several literal patterns at once (OR), such as one name's variants: `['clientId', 'client_id', 'CLIENT_ID']`. One call instead of several greps.",
+      {
+        patterns: z.array(z.string()).min(1).max(12).describe("Literal patterns, any of which may match"),
+        constraints: z.string().optional().describe("File constraints: `*.ts`, `src/`, `!test/`"),
+      },
+      async ({ patterns, constraints }) => reply(await nav.multiGrepForClaude(patterns, constraints)),
+    ),
+    tool(
+      "find_files",
+      "Find files by (fuzzy) name or path when you don't have an identifier to grep for: `onshape oauth`, `integration-id.ts`.",
+      { query: z.string().describe("Words from the file's name or path") },
+      async ({ query }) => reply(await nav.findForClaude(query)),
     ),
   ];
 }

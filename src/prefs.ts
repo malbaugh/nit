@@ -55,10 +55,17 @@ export async function claudeEnv(p: Pick<Prefs, "auth">): Promise<Record<string, 
 }
 
 /** The SDK options the preferences set: only what isn't Claude Code's default. */
-export async function claudeOptions(p: Prefs) {
+export async function claudeOptions(p: Prefs, kind: "ask" | "review" | "apply" = "review") {
   return {
     env: await claudeEnv(p),
+    // Only nit's own tools. Your account's claude.ai connectors and MCP servers added ~400K tokens
+    // of tool definitions to every turn after the first tool call, and your auto-memory notes
+    // (about other work) reached the review: both slow every answer and neither belongs here.
+    strictMcpConfig: true,
+    settings: { disableClaudeAiConnectors: true, autoMemoryEnabled: false },
     ...(p.model !== "default" ? { model: p.model } : {}),
-    ...(p.effort !== "default" ? { effort: p.effort } : {}),
+    // Questions are a conversation you wait on: low effort answers about twice as fast with the same
+    // grounding (measured on PR 2212). Co-review and apply keep Claude Code's default depth.
+    ...(p.effort !== "default" ? { effort: p.effort } : kind === "ask" ? { effort: "low" as const } : {}),
   };
 }

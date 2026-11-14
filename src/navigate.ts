@@ -235,7 +235,48 @@ export async function createNavigator(root: string, mergeBase: string, patch: ()
     return r.value.items.filter((m) => !m.isBinary && word.test(m.lineContent));
   }
 
+  /** Matches as Claude reads them: by file, definitions marked, lines cut short, a note when there's more. */
+  function forClaude(r: ReturnType<typeof finder.grep>, what: string) {
+    if (!r.ok) return `Search failed: ${r.error}`;
+    const items = r.value.items.filter((m) => !m.isBinary);
+    if (!items.length) return `No matches for ${what}.`;
+    const out: string[] = [];
+    let file = "";
+    for (const m of items) {
+      if (m.relativePath !== file) {
+        file = m.relativePath;
+        out.push(file);
+      }
+      out.push(`  ${m.lineNumber}${m.isDefinition ? " [def]" : ""}: ${m.lineContent.trim().slice(0, 200)}`);
+    }
+    if (r.value.nextCursor) out.push("(more matches: narrow with a path or *.ext constraint)");
+    if (r.value.regexFallbackError) out.unshift(`Not a valid regex, searched as text: ${r.value.regexFallbackError}`);
+    return out.join("\n");
+  }
+  const LIMITS = { pageSize: 60, maxMatchesPerFile: 8, timeBudgetMs: 3000, classifyDefinitions: true };
+
   return {
+    /** Claude's grep: fff's warm index; constraints (`*.ts`, `src/`, `!test/`) go before the text. */
+    async grepForClaude(query: string, regex: boolean) {
+      await scanned;
+      return forClaude(finder.grep(query, { ...LIMITS, mode: regex ? "regex" : "plain" }), JSON.stringify(query));
+    },
+
+    /** Claude's multi_grep: any of several literal patterns (name variants), in one pass. */
+    async multiGrepForClaude(patterns: string[], constraints?: string) {
+      await scanned;
+      return forClaude(finder.multiGrep({ ...LIMITS, patterns, constraints }), patterns.join(" | "));
+    },
+
+    /** Claude's find_files: fuzzy file names, recently used and changed files first. */
+    async findForClaude(query: string) {
+      await scanned;
+      const r = finder.fileSearch(query, { pageSize: 30 });
+      if (!r.ok) return `Search failed: ${r.error}`;
+      const files = r.value.items.map((f) => `${f.relativePath}${f.gitStatus !== "clean" ? ` (${f.gitStatus})` : ""}`);
+      return files.length ? files.join("\n") : `No files match ${JSON.stringify(query)}.`;
+    },
+
     /**
      * Repo-wide text search through fff's warm index, recently used files first. The query
      * may start with fff's scopes (`*.ts`, `src/`). Lines are cut to 400 characters.

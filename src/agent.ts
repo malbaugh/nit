@@ -30,7 +30,8 @@ import {
  */
 
 const TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
-const READ_TOOLS = ["Read", "Glob", "Grep"];
+// Searching goes through nit's fff tools (grep, multi_grep, find_files), so only Read is built in.
+const READ_TOOLS = ["Read"];
 
 // What to do about the errors a reviewer can fix; the rest keep Claude Code's own words.
 const WHY: Partial<Record<SDKAssistantMessageError, string>> = {
@@ -141,7 +142,11 @@ const isGuidelineFile = (rel: string) =>
 
 /** What a tool call is about, for progress: the file it touches or what it looks for. */
 export function targetOf(root: string, input: Record<string, unknown>) {
-  const p = (input.file_path ?? input.path ?? input.pattern ?? "") as string;
+  const p = (input.file_path ??
+    input.path ??
+    input.pattern ??
+    input.query ??
+    (Array.isArray(input.patterns) ? input.patterns.join(" | ") : "")) as string;
   return isAbsolute(p) ? relative(root, p) || "." : p;
 }
 
@@ -233,7 +238,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
             allowedTools: [...TOOLS, ...context.tools.map((t) => `mcp__nit__${t.name}`)],
             mcpServers: { nit: createSdkMcpServer({ name: "nit", tools: context.tools }) },
             settingSources: [],
-            ...(await claudeOptions(prefsOf(store))),
+            ...(await claudeOptions(prefsOf(store), "apply")),
             systemPrompt: { type: "preset", preset: "claude_code", append: INSTRUCTIONS },
             hooks: { PreToolUse: [{ hooks: [confine] }] },
             outputFormat: OUTCOMES,
@@ -334,7 +339,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
               allowedTools: [...READ_TOOLS, ...names],
               mcpServers: { nit: server },
               settingSources: [],
-              ...(await claudeOptions(prefsOf(store))),
+              ...(await claudeOptions(prefsOf(store), kind)),
               systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
               hooks: { PreToolUse: [{ hooks: [confineReview] }] },
               includePartialMessages: kind === "ask",

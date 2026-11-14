@@ -294,7 +294,10 @@ function Claude() {
           ]}
         />
       </Row>
-      <Row title="Effort" hint="More effort reads more and thinks longer: slower, and uses more of your plan.">
+      <Row
+        title="Effort"
+        hint="More effort reads more and thinks longer: slower, and uses more of your plan. Default answers questions at low effort, for speed, and co-reviews at Claude Code's default."
+      >
         <Choice<Prefs["effort"]>
           label="Effort"
           value={p.effort}
