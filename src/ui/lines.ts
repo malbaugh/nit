@@ -55,3 +55,17 @@ export function stats(file: FileDiffMetadata) {
   }
   return { add, del };
 }
+
+/** File tree order: folders before files at each level, then by name. Matches the sidebar tree. */
+export function treeOrder(a: string, b: string) {
+  const x = a.split("/");
+  const y = b.split("/");
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    if (x[i] === y[i]) continue;
+    const xDir = i < x.length - 1;
+    const yDir = i < y.length - 1;
+    if (xDir !== yDir) return xDir ? -1 : 1;
+    return x[i].localeCompare(y[i], undefined, { numeric: true, sensitivity: "base" });
+  }
+  return x.length - y.length;
+}

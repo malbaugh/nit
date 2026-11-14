@@ -2,7 +2,7 @@ import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pie
 import { useSyncExternalStore } from "react";
 import type { Draft, FileContents, GitHubState, Location, ReviewData, Side, Symbol as Sym } from "../types";
 import { api } from "./api";
-import { type Row, rows } from "./lines";
+import { type Row, rows, treeOrder } from "./lines";
 import { toasts } from "./toasts";
 
 export type Point = { side: Side; line: number };
@@ -166,7 +166,12 @@ export async function load() {
     // Coming back to the tab reloads; an unchanged patch keeps the hydrated files and outlines.
     const same = data.patch === state.data?.patch;
     if (!same) contents.clear();
-    const files = same ? state.files : parsePatchFiles(data.patch).flatMap((p) => p.files);
+    // In tree order, so next/previous file walks the sidebar top to bottom.
+    const files = same
+      ? state.files
+      : parsePatchFiles(data.patch)
+          .flatMap((p) => p.files)
+          .sort((a, b) => treeOrder(a.name, b.name));
     const before = currentFile()?.name;
     set((s) => {
       const current = Math.max(0, before ? files.findIndex((f) => f.name === before) : 0);
