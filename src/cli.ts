@@ -15,7 +15,11 @@ import {
   FINDINGS_SCHEMA,
   type Finding,
   fileDiff,
+  GUIDE_INSTRUCTIONS,
+  GUIDE_SCHEMA,
+  guidePrompt,
   locateLines,
+  placeGuide,
   proposals,
   REVIEW_INSTRUCTIONS,
   reviewPrompt,
@@ -30,7 +34,7 @@ import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
 import * as term from "./term";
 import { themeBoot } from "./theme-boot";
-import type { AskThread, Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
+import type { AskThread, Draft, FileContents, GuideChapter, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
 const uiDir = uiDirFor(dev);
@@ -53,6 +57,8 @@ if (!mergeBase)
 const branch = await git.currentBranch(root);
 const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
+// Claude's reading order, per review: it holds while the set of files does (placeGuide fills gaps).
+const guideKey = `guide:${project}:${branch}`;
 // A stable port per repo keeps the tab's address (and its local backups) across restarts.
 // The diff is read by the page and by navigation; reuse one read for a couple of seconds.
 const patchCache = new Map<boolean, { at: number; text: Promise<string> }>();
@@ -286,6 +292,10 @@ const serve = (p: number) =>
             drafts: store.drafts(),
             ...viewedNow(text),
             asks: await placeAsks(),
+            guide: (() => {
+              const saved = store.setting(guideKey) as GuideChapter[] | null;
+              return saved ? placeGuide(saved, changedPaths(text)) : null;
+            })(),
           };
           return json(data);
         }),
@@ -482,6 +492,38 @@ const serve = (p: number) =>
       },
       "/api/agent/job": {
         GET: guarded(async () => json({ job: agent.job() })),
+      },
+      "/api/guide": {
+        // Claude arranges the files into chapters to read in order.
+        POST: guarded(async () => {
+          const text = await patch();
+          if (!text.trim()) return fail(400, "nothing to review");
+          const gh = await github.state();
+          const pr = gh.status === "ready" ? gh : null;
+          const none: Guidelines = { inline: [], indexed: [], ref: base };
+          try {
+            const job = await agent.runJob("guide", {
+              prompt: guidePrompt({
+                patch: text,
+                title: pr?.pr.title ?? null,
+                body: pr?.body ?? null,
+                maxInline: 80_000,
+              }),
+              instructions: GUIDE_INSTRUCTIONS,
+              guidelines: none,
+              tools: claudeTools(none, text).filter((t) => t.name === "file_diff"),
+              outputFormat: GUIDE_SCHEMA,
+              finish: async (out) => {
+                const chapters = (out as { chapters?: GuideChapter[] } | undefined)?.chapters;
+                if (!chapters?.length) throw new Error("Claude didn't return a reading order.");
+                store.setSetting(guideKey, placeGuide(chapters, changedPaths(text)));
+              },
+            });
+            return json({ job });
+          } catch (e) {
+            return fail(409, e instanceof Error ? e.message : String(e));
+          }
+        }),
       },
       "/api/coreview": {
         // Claude reviews the whole diff; what survives nit's checks becomes proposed drafts.

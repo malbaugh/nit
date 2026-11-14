@@ -434,9 +434,11 @@ export function toggleViewed(advance = true) {
   api.setViewed(file.name, now).catch(() => fail("Couldn't save viewed state. Is nit still running?"));
   if (now && advance) {
     const next = (f: FileDiffMetadata) => !viewed.has(f.name) && !hiddenFile(f.name);
-    const i = state.files.findIndex((f, i) => i > state.current && next(f));
-    const wrap = i === -1 ? state.files.findIndex(next) : i;
-    if (wrap !== -1) openFile(wrap);
+    // The next unviewed file after this one in the list's order, wrapping around.
+    const order = fileOrder();
+    const k = order.indexOf(state.current);
+    const pick = [...order.slice(k + 1), ...order.slice(0, k + 1)].find((i) => next(state.files[i]));
+    if (pick !== undefined) openFile(pick);
   }
 }
 
@@ -487,8 +489,17 @@ export function hiddenFile(name: string, s: State = state) {
 
 /** j / k: the next or previous file the list shows, skipping the ones set aside. */
 export function stepFile(dir: 1 | -1) {
-  for (let i = state.current + dir; i >= 0 && i < state.files.length; i += dir)
-    if (!hiddenFile(state.files[i].name)) return openFile(i);
+  const order = fileOrder();
+  for (let k = order.indexOf(state.current) + dir; k >= 0 && k < order.length; k += dir)
+    if (!hiddenFile(state.files[order[k]].name)) return openFile(order[k]);
+}
+
+/** The file list as `files` indices, in the order it shows them: Claude's guide when it's on. */
+export function fileOrder(s: State = state): number[] {
+  const guide = s.prefs.guided ? s.data?.guide : null;
+  if (!guide) return s.files.map((_, i) => i);
+  const at = new Map(s.files.map((f, i) => [f.name, i]));
+  return guide.flatMap((c) => c.files.flatMap((name) => at.get(name) ?? []));
 }
 
 /** The current conversation about exactly these lines, if there is one (outdated ones aren't). */

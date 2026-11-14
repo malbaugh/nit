@@ -46,9 +46,14 @@ export type ReviewData = {
   /** Files marked viewed whose diff has changed since: to look at again. */
   changedSinceViewed: string[];
   asks: AskThread[];
+  /** Claude's reading order for the files, if you asked for one. */
+  guide: GuideChapter[] | null;
 };
 
 /** "formatting": only whitespace changed. */
+/** A few files that belong together, in the order to read them. */
+export type GuideChapter = { title: string; why: string; files: string[] };
+
 export type FileCategory = "generated" | "test" | "docs" | "formatting";
 
 /** A conversation with Claude about some lines, kept for the review so you can come back to it. */
@@ -250,6 +255,8 @@ export type Prefs = {
   hideViewed: boolean;
   /** Diff ignoring whitespace (git diff -w); files where only whitespace changed are set aside. */
   hideWhitespace: boolean;
+  /** List files in Claude's reading order (when there is one) instead of as a tree. */
+  guided: boolean;
 };
 
 export const DEFAULT_PREFS: Prefs = {
@@ -266,6 +273,7 @@ export const DEFAULT_PREFS: Prefs = {
   hideDocs: false,
   hideViewed: false,
   hideWhitespace: false,
+  guided: true,
 };
 
 /** Your GitHub login for this repo's host: the token saved in nit, else the GitHub CLI's. */
@@ -290,7 +298,7 @@ export const API_KEY_ERROR = "The API key saved in nit was refused. Replace it i
 
 export type Job = {
   id: string;
-  kind: "review" | "ask";
+  kind: "review" | "ask" | "guide";
   state: "running" | "done" | "stopped" | "failed";
   startedAt: number;
   endedAt: number | null;

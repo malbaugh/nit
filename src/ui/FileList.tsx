@@ -1,8 +1,10 @@
 import { Menu } from "@base-ui/react/menu";
-import { ChatLines, Check, EyeClosed, GitBranch, Search } from "iconoir-react/regular";
+import { ChatLines, Check, EyeClosed, GitBranch, Search, Sparks } from "iconoir-react/regular";
 import { useMemo } from "react";
 import type { Prefs } from "../types";
+import * as agent from "./agent";
 import { ChangedTree } from "./ChangedTree";
+import { GuideList } from "./Guide";
 import { stats } from "./lines";
 import { PullRequestButton } from "./PullRequest";
 import { SettingsButton } from "./Settings";
@@ -17,6 +19,36 @@ const HIDE: { pref: keyof Prefs; label: string; category?: string }[] = [
   { pref: "hideViewed", label: "Viewed files" },
 ];
 
+/** Claude's reading order: asks for one, then switches between it and the tree. */
+function GuideButton() {
+  const has = st.useStore((s) => !!s.data?.guide);
+  const on = st.useStore((s) => s.prefs.guided && !!s.data?.guide);
+  const busy = st.useStore((s) => s.job?.state === "running" || s.agent?.state === "running");
+  const ordering = st.useStore((s) => s.job?.state === "running" && s.job.kind === "guide");
+  const label = has
+    ? on
+      ? "Show the files as a tree"
+      : "Show Claude's reading order"
+    : "Ask Claude for a reading order";
+  return (
+    <button
+      type="button"
+      disabled={!has && busy}
+      aria-pressed={has ? on : undefined}
+      onClick={() => (has ? st.setPrefs({ guided: !on }) : void agent.guide())}
+      title={label}
+      aria-label={label}
+      className={`flex h-5 items-center gap-1 rounded-[5px] px-1 transition-[background-color,color] duration-100 enabled:[@media(hover:hover)]:hover:bg-hover-2 enabled:[@media(hover:hover)]:hover:text-ink-2 disabled:opacity-50 ${on ? "bg-accent-tint text-accent-ink" : ""}`}
+    >
+      {ordering ? (
+        <span className="size-3 animate-spin rounded-full border-[1.5px] border-line-strong border-t-accent" />
+      ) : (
+        <Sparks width={13} height={13} />
+      )}
+    </button>
+  );
+}
+
 /**
  * Sets aside what isn't the change itself: lockfiles, generated code, snapshots (as
  * .gitattributes or convention says), tests, docs, and the files you've already viewed.
@@ -30,10 +62,10 @@ function HideMenu({ hidden }: { hidden: number }) {
     <Menu.Root>
       <Menu.Trigger
         className={`flex h-5 items-center gap-1 rounded-[5px] px-1 tabular-nums transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink-2 data-popup-open:bg-hover-2 ${hidden ? "text-ink-2" : ""}`}
-        aria-label="Hide files"
+        aria-label={hidden ? `Hide files, ${hidden} hidden` : "Hide files"}
       >
         <EyeClosed width={13} height={13} />
-        {hidden ? `${hidden} hidden` : null}
+        {hidden || null}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner className="z-50 outline-none" sideOffset={4} align="start">
@@ -76,6 +108,7 @@ export function FileList() {
   const base = st.useStore((s) => s.data?.base);
   const done = useMemo(() => files.reduce((n, f) => n + (viewed.has(f.name) ? 1 : 0), 0), [files, viewed]);
   const categories = st.useStore((s) => s.categories);
+  const guided = st.useStore((s) => s.prefs.guided && !!s.data?.guide);
   const hidden = st.useStore((s) => s.files.filter((f) => st.hiddenFile(f.name, s)).length);
   // The size of the change itself: generated files, tests and docs don't count.
   const code = useMemo(
@@ -119,17 +152,26 @@ export function FileList() {
       <div className="flex h-7 shrink-0 items-center gap-2 px-3.5 text-[12px] text-ink-3">
         <span className="font-medium text-ink-2">Files</span>
         <span className="tabular-nums">{files.length}</span>
-        <span className="tabular-nums" title="Lines changed, not counting generated files, tests and docs">
+        <span
+          className="whitespace-nowrap tabular-nums"
+          title="Lines changed, not counting generated files, tests and docs"
+        >
           <span className="text-green">+{code.add}</span> <span className="text-red">−{code.del}</span>
         </span>
-        <HideMenu hidden={hidden} />
         {changed ? (
-          <span className="text-orange tabular-nums" title="Files you marked viewed that changed since">
-            · {changed} changed since viewed
+          <span
+            className="whitespace-nowrap text-orange tabular-nums"
+            title={`${changed} files you marked viewed changed since`}
+          >
+            · {changed} changed
           </span>
         ) : null}
+        <span className="ml-auto flex items-center">
+          <HideMenu hidden={hidden} />
+          <GuideButton />
+        </span>
         <span
-          className="ml-auto flex items-center gap-1.5 tabular-nums"
+          className="flex items-center gap-1.5 whitespace-nowrap tabular-nums"
           title={`${done} of ${files.length} files viewed`}
         >
           <ProgressRing value={files.length ? done / files.length : 0} />
@@ -137,7 +179,7 @@ export function FileList() {
         </span>
       </div>
 
-      <ChangedTree />
+      {guided ? <GuideList /> : <ChangedTree />}
 
       <footer className="flex h-11 shrink-0 items-center gap-1 px-2 shadow-[0_-1px_0_var(--line)]">
         {agentRunning ? (
@@ -152,7 +194,9 @@ export function FileList() {
                 ? "Claude is reviewing…"
                 : jobKind === "ask"
                   ? "Claude is answering…"
-                  : `Claude is applying ${agentCount}…`}
+                  : jobKind === "guide"
+                    ? "Claude is ordering the files…"
+                    : `Claude is applying ${agentCount}…`}
             </span>
           </button>
         ) : (

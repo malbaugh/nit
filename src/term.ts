@@ -103,7 +103,12 @@ const failed = (what: string, error: string | null) => log(`${c.red("✕")} ${wh
 
 const running = new Set<string>();
 function job(j: Job) {
-  const what = j.kind === "review" ? "Claude reviewing the diff" : `Claude answering about ${where(j)}`;
+  const what =
+    j.kind === "review"
+      ? "Claude reviewing the diff"
+      : j.kind === "guide"
+        ? "Claude ordering the files"
+        : `Claude answering about ${where(j)}`;
   if (j.state === "running") {
     if (!running.has(j.id)) {
       running.add(j.id);
@@ -115,7 +120,9 @@ function job(j: Job) {
   if (!running.delete(j.id)) return;
   idle();
   if (j.state === "stopped") return log(`${c.dim("·")} stopped ${took(j.startedAt, j.endedAt)}`);
-  if (j.state === "failed") return failed(j.kind === "review" ? "co-review" : "question", j.error);
+  if (j.state === "failed")
+    return failed(j.kind === "review" ? "co-review" : j.kind === "guide" ? "guide" : "question", j.error);
+  if (j.kind === "guide") return log(`${c.green("✓")} ordered the files ${took(j.startedAt, j.endedAt)}`);
   if (j.kind === "ask") return log(`${c.green("✓")} answered ${took(j.startedAt, j.endedAt)}`);
   const dropped = j.dropped.length ? c.dim(` · ${j.dropped.length} dropped by checks`) : "";
   log(`${c.green("✓")} proposed ${plural(j.found, "comment")}${dropped} ${took(j.startedAt, j.endedAt)}`);

@@ -17,6 +17,7 @@ const FIELDS = {
   hideDocs: z.boolean(),
   hideViewed: z.boolean(),
   hideWhitespace: z.boolean(),
+  guided: z.boolean(),
 } satisfies Record<keyof Prefs, z.ZodType>;
 
 /** What the settings screen may save. Keys nit doesn't know (an older or newer page's) are dropped. */
@@ -64,7 +65,7 @@ export async function claudeEnv(p: Pick<Prefs, "auth">): Promise<Record<string, 
 }
 
 /** The SDK options the preferences set: only what isn't Claude Code's default. */
-export async function claudeOptions(p: Prefs, kind: "ask" | "review" | "apply" = "review") {
+export async function claudeOptions(p: Prefs, kind: "ask" | "review" | "guide" | "apply" = "review") {
   return {
     env: await claudeEnv(p),
     // Only nit's own tools. Your account's claude.ai connectors and MCP servers added ~400K tokens
@@ -75,6 +76,10 @@ export async function claudeOptions(p: Prefs, kind: "ask" | "review" | "apply" =
     ...(p.model !== "default" ? { model: p.model } : {}),
     // Questions are a conversation you wait on: low effort answers about twice as fast with the same
     // grounding (measured on PR 2212). Co-review and apply keep Claude Code's default depth.
-    ...(p.effort !== "default" ? { effort: p.effort } : kind === "ask" ? { effort: "low" as const } : {}),
+    ...(p.effort !== "default"
+      ? { effort: p.effort }
+      : kind === "ask" || kind === "guide"
+        ? { effort: "low" as const }
+        : {}),
   };
 }

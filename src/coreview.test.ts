@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Finding, hunkRanges, locateLines, proposals } from "./coreview";
+import { type Finding, hunkRanges, locateLines, placeGuide, proposals } from "./coreview";
 import type { Guidelines } from "./guidelines";
 
 const file = [
@@ -129,4 +129,20 @@ test("a conversation's lines are found where they moved, the nearest copy wins, 
   expect(locateLines(["new", ...file], ["b"], 4)).toBe(5); // moved down a line
   expect(locateLines(file, ["x  "], 2)).toBe(2); // trailing whitespace doesn't count
   expect(locateLines(file, ["gone"], 2)).toBeNull();
+});
+
+test("the guide keeps each changed file once, drops unknown paths, and gathers the rest last", () => {
+  const out = placeGuide(
+    [
+      { title: "Core", why: "w", files: ["a.ts", "ghost.ts", "b.ts"] },
+      { title: "Again", why: "w", files: ["a.ts"] },
+      { title: "UI", why: "w", files: ["c.tsx"] },
+    ],
+    ["a.ts", "b.ts", "c.tsx", "d.md"],
+  );
+  expect(out).toEqual([
+    { title: "Core", why: "w", files: ["a.ts", "b.ts"] },
+    { title: "UI", why: "w", files: ["c.tsx"] },
+    { title: "Everything else", why: "Files the guide doesn't place.", files: ["d.md"] },
+  ]);
 });

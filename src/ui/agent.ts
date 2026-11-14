@@ -43,12 +43,14 @@ async function jobFinished(job: Job) {
     return needSignIn(
       job.kind === "review"
         ? coreview
-        : // The same question about the same lines, wherever you are by then.
-          () => {
-            if (!job.at) return;
-            st.set({ asking: job.at, peek: null });
-            void ask(job.question ?? "", job.at);
-          },
+        : job.kind === "guide"
+          ? guide
+          : // The same question about the same lines, wherever you are by then.
+            () => {
+              if (!job.at) return;
+              st.set({ asking: job.at, peek: null });
+              void ask(job.question ?? "", job.at);
+            },
     );
   // An open ask box shows its own error.
   if (job.state === "failed")
@@ -61,6 +63,10 @@ async function jobFinished(job: Job) {
       (asks) => st.set({ asks }),
       () => {},
     );
+  if (job.kind === "guide" && job.state === "done") {
+    st.setPrefs({ guided: true });
+    return void st.load(); // the guide comes with the review
+  }
   if (job.state === "stopped" || job.kind !== "review") return;
   await st.load(); // the proposals are drafts now
   const dropped = job.dropped.length ? ` · ${job.dropped.length} dropped by checks` : "";
@@ -72,6 +78,16 @@ async function jobFinished(job: Job) {
       if (first) st.focusDraft(first.id);
     },
   });
+}
+
+/** Claude arranges the files into chapters, in the order to read them. */
+export async function guide() {
+  try {
+    const { job } = await api.guide();
+    st.set({ job, agentActivity: [] });
+  } catch (e) {
+    st.fail(e instanceof Error ? e.message : "Couldn't start the guide.");
+  }
 }
 
 /** Claude reviews the whole diff; what survives nit's checks arrives as proposed comments. */

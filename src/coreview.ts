@@ -1,6 +1,6 @@
 import type { Guidelines } from "./guidelines";
 import { guidelinesBlock, quoteHolds } from "./guidelines";
-import type { Draft, Proposal } from "./types";
+import type { Draft, GuideChapter, Proposal } from "./types";
 
 /**
  * Claude as a co-reviewer. The prompt follows what the best reviewers converged on: Anthropic's
@@ -346,4 +346,66 @@ export function askPrompt(o: {
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+export const GUIDE_INSTRUCTIONS = `A human is about to review this pull request file by file. Arrange its changed files into a reading order: a few chapters, each a handful of files that belong together, ordered so each chapter makes sense given the ones before it.
+
+- Start with the heart of the change: the new or changed types, schema, API or core logic.
+- Then what uses it: call sites, UI, wiring.
+- Tests go with or right after the code they test. Generated files, lockfiles, config and docs go last.
+- Every changed file appears in exactly one chapter, by its path as given.
+- A chapter's title is a short noun phrase (at most six words). Its "why" is one sentence on what to look for there.
+- Decide from the diff. Read a file only if the diff can't tell you what it's for.`;
+
+export const GUIDE_SCHEMA = {
+  type: "json_schema" as const,
+  schema: {
+    type: "object",
+    properties: {
+      chapters: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string" },
+            why: { type: "string" },
+            files: { type: "array", items: { type: "string" } },
+          },
+          required: ["title", "why", "files"],
+        },
+      },
+    },
+    required: ["chapters"],
+  },
+};
+
+export function guidePrompt(o: { patch: string; title: string | null; body: string | null; maxInline: number }) {
+  const files = [...hunkRanges(o.patch).keys()];
+  const diff =
+    o.patch.length <= o.maxInline
+      ? `<diff>\n${o.patch}\n</diff>`
+      : `<diff note="Too large to include. Read a file's diff with file_diff when its path doesn't say enough.">\n${files.map((f) => `- ${f}`).join("\n")}\n</diff>`;
+  return [
+    o.title ? `<pull-request-title>${o.title}</pull-request-title>` : "",
+    o.body?.trim() ? `<pull-request-description>\n${o.body.slice(0, 4000)}\n</pull-request-description>` : "",
+    `Arrange these ${files.length} files into a reading order.`,
+    diff,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/**
+ * Claude's chapters, held to the files the review has now: unknown paths dropped, each file once,
+ * and files it left out (or that changed in since) in a last chapter, so the guide covers them all.
+ */
+export function placeGuide(chapters: GuideChapter[], paths: string[]): GuideChapter[] {
+  const left = new Set(paths);
+  const out: GuideChapter[] = [];
+  for (const c of chapters) {
+    const files = c.files.filter((f) => left.delete(f));
+    if (files.length) out.push({ title: c.title, why: c.why, files });
+  }
+  if (left.size) out.push({ title: "Everything else", why: "Files the guide doesn't place.", files: [...left] });
+  return out;
 }

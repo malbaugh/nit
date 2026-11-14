@@ -6,7 +6,6 @@ import {
   type SDKAssistantMessageError,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { FINDINGS_SCHEMA } from "./coreview";
 import { within } from "./git";
 import type { Guidelines } from "./guidelines";
 import { claudeOptions, prefsOf, savedKey } from "./prefs";
@@ -318,7 +317,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
         instructions: string;
         guidelines: Guidelines;
         tools: NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]>;
-        outputFormat?: typeof FINDINGS_SCHEMA;
+        outputFormat?: { type: "json_schema"; schema: Record<string, unknown> };
         at?: Job["at"];
         question?: string;
         resume?: string | null;

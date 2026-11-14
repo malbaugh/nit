@@ -43,6 +43,7 @@ export const api = {
   agent: () => call<{ run: AgentRun | null }>("GET", "/api/agent"),
   applyAgent: (ids?: string[]) => call<{ run: AgentRun }>("POST", "/api/agent/apply", { ids }),
   coreview: () => call<{ job: Job }>("POST", "/api/coreview", {}),
+  guide: () => call<{ job: Job }>("POST", "/api/guide", {}),
   ask: (b: { path: string; side: Side; start: number; end: number; question: string; followUp?: string | null }) =>
     call<{ job: Job }>("POST", "/api/ask", b),
   job: () => call<{ job: Job | null }>("GET", "/api/agent/job"),

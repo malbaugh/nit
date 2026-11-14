@@ -169,6 +169,15 @@ export const actions: Action[] = [
     run: () => void agent.coreview(),
   },
   {
+    id: "guide",
+    group: "Review",
+    label: "Guide me through this pull request",
+    keys: [],
+    icon: <Sparks />,
+    when: () => st.get().agent?.state !== "running" && st.get().job?.state !== "running",
+    run: () => void agent.guide(),
+  },
+  {
     id: "ask",
     group: "Review",
     label: "Ask Claude about these lines",
