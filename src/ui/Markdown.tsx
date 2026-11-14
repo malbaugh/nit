@@ -1,8 +1,5 @@
-import { memo, useRef } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
+import { createElement, memo, type ReactNode, useRef } from "react";
+import { type Components, Streamdown } from "streamdown";
 import { CodeBlock } from "./Code";
 
 function SuggestionBlock({ source }: { source: string }) {
@@ -20,31 +17,58 @@ type HastNode = {
   type: string;
   value?: string;
   tagName?: string;
-  properties?: { className?: unknown };
+  properties?: { className?: unknown; align?: unknown };
   children?: HastNode[];
 };
 const hastText = (n: HastNode): string =>
   n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(hastText).join("");
 
-// GitHub renders a safe subset of HTML in comments (details, img, sup, kbd…). rehype-raw parses
-// it and rehype-sanitize keeps only what GitHub's own sanitizer allows; scripts, styles, event
-// handlers and HTML comments are dropped.
-const REHYPE = [rehypeRaw, rehypeSanitize];
+// Streamdown draws these with its own markup (strong as a <span>, tables in wrappers) and its
+// classes; nit wants the plain elements with the Markdown's own classes (GitHub's
+// contains-task-list, task-list-item), which its .md styles expect.
+const PLAIN = ["strong", "em", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "blockquote"] as const;
+const plain = Object.fromEntries(
+  PLAIN.map((tag) => [
+    tag,
+    ({ node, children }: { node?: HastNode; children?: ReactNode }) => {
+      const own = node?.properties?.className;
+      const align = node?.properties?.align; // a table column's :--: alignment
+      return createElement(
+        tag,
+        {
+          className: Array.isArray(own) ? own.join(" ") : undefined,
+          style: typeof align === "string" ? { textAlign: align as "left" | "center" | "right" } : undefined,
+        },
+        children,
+      );
+    },
+  ]),
+) as Components;
 
 /**
- * GitHub-flavoured Markdown: tables, task lists, strikethrough, autolinks and GitHub's safe HTML.
+ * GitHub-flavoured Markdown through Streamdown: tables, task lists, strikethrough, autolinks and
+ * GitHub's safe HTML (its sanitizer keeps what GitHub's allows; rehype-harden checks links and
+ * images). While Claude's answer streams, an unfinished **bold**, `code` or fence renders as if it
+ * were closed instead of flashing raw syntax, and finished blocks don't re-render.
+ *
+ * nit draws the pieces itself: code with Pierre's highlighter (one engine per page), suggestion
+ * blocks, links in a new tab, and task boxes that can be ticked.
  */
 export const Markdown = memo(function Markdown({
   source,
   onToggleTask,
+  streaming = false,
 }: {
   source: string;
   onToggleTask?: (index: number) => void;
+  /** The text is still arriving (an answer from Claude). */
+  streaming?: boolean;
 }) {
   const taskIndex = useRef(0);
   taskIndex.current = 0;
 
   const components: Components = {
+    ...plain,
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noreferrer noopener">
         {children}
@@ -86,9 +110,20 @@ export const Markdown = memo(function Markdown({
 
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={REHYPE} components={components}>
+      <Streamdown
+        mode={streaming ? "streaming" : "static"}
+        isAnimating={streaming}
+        components={components}
+        // Streamdown styles its own elements with Tailwind classes; a prefix nit's Tailwind
+        // doesn't have keeps them from matching, so the .md styles (GitHub's look) apply.
+        prefix="sd"
+        controls={false}
+        linkSafety={{ enabled: false }}
+        tableMaxHeight={0}
+        codeBlockMaxHeight={0}
+      >
         {source}
-      </ReactMarkdown>
+      </Streamdown>
     </div>
   );
 });

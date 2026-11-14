@@ -104,7 +104,7 @@ export function AskAnnotation() {
             {here.answer ? (
               <div className="text-[13px]">
                 <Suspense fallback={<p className="whitespace-pre-wrap">{here.answer}</p>}>
-                  <Markdown source={here.answer} />
+                  <Markdown source={here.answer} streaming={running} />
                 </Suspense>
               </div>
             ) : null}
