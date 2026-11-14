@@ -1,5 +1,5 @@
-import { getSharedHighlighter, type SupportedLanguages } from "@pierre/diffs";
-import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+import { getFiletypeFromFileName, getSharedHighlighter, type SupportedLanguages } from "@pierre/diffs";
+import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -52,8 +52,15 @@ function SuggestionBlock({ source }: { source: string }) {
   );
 }
 
-const text = (children: ReactNode): string =>
-  Array.isArray(children) ? children.map(text).join("") : typeof children === "string" ? children : "";
+type HastNode = {
+  type: string;
+  value?: string;
+  tagName?: string;
+  properties?: { className?: unknown };
+  children?: HastNode[];
+};
+const hastText = (n: HastNode): string =>
+  n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(hastText).join("");
 
 /**
  * GitHub-flavoured Markdown: tables, task lists, strikethrough and autolinks. Raw HTML is
@@ -62,10 +69,14 @@ const text = (children: ReactNode): string =>
 export const Markdown = memo(function Markdown({
   source,
   onToggleTask,
+  path,
 }: {
   source: string;
   onToggleTask?: (index: number) => void;
+  /** The commented file: a code block without a language is highlighted as this file's language. */
+  path?: string;
 }) {
+  const fallbackLang = path ? (getFiletypeFromFileName(path) ?? "") : "";
   const taskIndex = useRef(0);
   taskIndex.current = 0;
 
@@ -75,13 +86,15 @@ export const Markdown = memo(function Markdown({
         {children}
       </a>
     ),
-    pre: ({ children }) => <>{children}</>,
-    code: ({ className, children }) => {
-      const lang = /language-([\w+-]+)/.exec(className ?? "")?.[1];
-      const source = text(children).replace(/\n$/, "");
-      if (!className && !source.includes("\n")) return <code>{children}</code>;
+    // Fenced blocks are the <code> inside a <pre>; any other <code> is inline.
+    pre: ({ node, children }) => {
+      const code = (node as HastNode | undefined)?.children?.find((c) => c.tagName === "code");
+      if (!code) return <pre>{children}</pre>;
+      const classes = Array.isArray(code.properties?.className) ? code.properties.className.join(" ") : "";
+      const lang = /language-([\w+-]+)/.exec(classes)?.[1];
+      const source = hastText(code).replace(/\n$/, "");
       if (lang === "suggestion") return <SuggestionBlock source={source} />;
-      return <CodeBlock source={source} lang={lang ?? ""} />;
+      return <CodeBlock source={source} lang={lang ?? fallbackLang} />;
     },
     input: ({ checked, type }) => {
       if (type !== "checkbox") return null;

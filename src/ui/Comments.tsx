@@ -22,7 +22,7 @@ import { Button, IconButton, Kbd } from "./ui";
 
 // The Markdown parser is the heaviest piece of the UI; load it after the diff has painted.
 const LazyMarkdown = lazy(() => import("./Markdown").then((m) => ({ default: m.Markdown })));
-function Markdown(props: { source: string; onToggleTask?: (index: number) => void }) {
+function Markdown(props: { source: string; path?: string; onToggleTask?: (index: number) => void }) {
   return (
     <Suspense fallback={<p className="md whitespace-pre-wrap">{props.source}</p>}>
       <LazyMarkdown {...props} />
@@ -264,7 +264,11 @@ function Composer({ draft }: { draft: Draft }) {
 
       {preview ? (
         <div className="min-h-[76px] px-3.5 py-3">
-          {draft.body.trim() ? <Markdown source={draft.body} /> : <p className="text-ink-3">Nothing to preview.</p>}
+          {draft.body.trim() ? (
+            <Markdown source={draft.body} path={draft.path} />
+          ) : (
+            <p className="text-ink-3">Nothing to preview.</p>
+          )}
           {draft.suggestion !== null ? (
             <SuggestionDiff before={draft.anchor} after={draft.suggestion.split("\n")} />
           ) : null}
@@ -398,6 +402,7 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
       {rest.trim() ? (
         <div className="mt-1">
           <Markdown
+            path={draft.path}
             source={rest}
             onToggleTask={(i) => st.updateDraft(draft.id, { body: md.toggleTask(draft.body, i) })}
           />
