@@ -7,7 +7,7 @@ import { $ } from "bun";
 import { Octokit } from "octokit";
 import { childEnv } from "./child-env";
 import { parseRemote, type Repo } from "./git";
-import type { Draft, GitHubState, PostResult, PullRequest, ReviewEvent, Thread } from "./types";
+import type { Check, CheckAnnotation, Draft, GitHubState, PostResult, PullRequest, ReviewEvent, Thread } from "./types";
 
 export { parseRemote };
 
@@ -183,12 +183,42 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
   async function load(): Promise<GitHubState> {
     const c = await connect();
     if ("reason" in c) return { status: "unavailable", reason: c.reason };
-    const [threads, headSha, status] = await Promise.all([
+    const [threads, details, headSha, status] = await Promise.all([
       fetchThreads(c),
+      fetchDetails(c),
       out($`git rev-parse HEAD`.cwd(root)),
       out($`git status --porcelain`.cwd(root)),
     ]);
-    return { status: "ready", pr: c.pr, viewer: c.viewer, threads, local: { headSha, dirty: status !== "" } };
+    c.pr = { ...c.pr, ...details.pr };
+    return {
+      status: "ready",
+      pr: c.pr,
+      viewer: c.viewer,
+      threads,
+      body: details.body,
+      checks: details.checks,
+      annotations: details.annotations,
+      local: { headSha, dirty: status !== "" },
+    };
+  }
+
+  /** What changes while you review: the title and description, the head commit and its checks. */
+  async function fetchDetails(c: Ctx) {
+    const r = await c.octokit.graphql<{ repository: { pullRequest: DetailsNode } }>(
+      `query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) { pullRequest(number: $number) {
+          title state body headRefOid
+          commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+            __typename
+            ... on CheckRun { name status conclusion detailsUrl title
+              annotations(first: 50) { nodes { path title message annotationLevel location { start { line } end { line } } } } }
+            ... on StatusContext { context state targetUrl description }
+          } } } } } }
+        } }
+      }`,
+      { owner: c.repo.owner, name: c.repo.name, number: c.pr.number },
+    );
+    return toDetails(r.repository.pullRequest);
   }
 
   return {
@@ -311,3 +341,94 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
 }
 
 export type GitHub = ReturnType<typeof createGitHub>;
+
+type DetailsNode = {
+  title: string;
+  state: string;
+  body: string;
+  headRefOid: string;
+  commits: {
+    nodes: {
+      commit: {
+        statusCheckRollup: {
+          contexts: {
+            nodes: (
+              | {
+                  __typename: "CheckRun";
+                  name: string;
+                  status: string;
+                  conclusion: string | null;
+                  detailsUrl: string | null;
+                  title: string | null;
+                  annotations: {
+                    nodes: {
+                      path: string;
+                      title: string | null;
+                      message: string;
+                      annotationLevel: string;
+                      location: { start: { line: number }; end: { line: number } };
+                    }[];
+                  };
+                }
+              | {
+                  __typename: "StatusContext";
+                  context: string;
+                  state: string;
+                  targetUrl: string | null;
+                  description: string | null;
+                }
+            )[];
+          };
+        } | null;
+      };
+    }[];
+  };
+};
+
+const FAILED = new Set(["FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"]);
+
+export function toDetails(p: DetailsNode) {
+  const checks: Check[] = [];
+  const annotations: CheckAnnotation[] = [];
+  for (const n of p.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? []) {
+    if (n.__typename === "StatusContext") {
+      checks.push({
+        name: n.context,
+        state: n.state === "SUCCESS" ? "success" : FAILED.has(n.state) ? "failure" : "pending",
+        url: n.targetUrl,
+        summary: n.description,
+      });
+      continue;
+    }
+    const state =
+      n.status !== "COMPLETED"
+        ? "pending"
+        : n.conclusion === "SUCCESS"
+          ? "success"
+          : FAILED.has(n.conclusion ?? "")
+            ? "failure"
+            : "neutral";
+    checks.push({ name: n.name, state, url: n.detailsUrl, summary: n.title });
+    n.annotations.nodes.forEach((a, i) => {
+      annotations.push({
+        id: `${n.name}:${i}`,
+        check: n.name,
+        path: a.path,
+        start: a.location.start.line,
+        end: a.location.end.line,
+        level: a.annotationLevel === "FAILURE" ? "failure" : a.annotationLevel === "WARNING" ? "warning" : "notice",
+        title: a.title,
+        message: a.message,
+      });
+    });
+  }
+  // Failures first, then what's still running, as GitHub lists them.
+  const order = { failure: 0, pending: 1, neutral: 2, success: 3 };
+  checks.sort((a, b) => order[a.state] - order[b.state] || a.name.localeCompare(b.name));
+  return {
+    pr: { title: p.title, state: p.state, headSha: p.headRefOid },
+    body: p.body,
+    checks,
+    annotations,
+  };
+}

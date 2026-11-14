@@ -36,6 +36,7 @@ import { copy, type MenuItem, RightClick, selectedText } from "./Menu";
 import * as nav from "./nav";
 import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
+import { CheckAnnotationRow } from "./PullRequest";
 import * as st from "./state";
 import * as suggest from "./suggest";
 import { ThreadAnnotation } from "./Threads";
@@ -48,7 +49,8 @@ type Meta =
   | { thread: string }
   | { suggesting: true }
   | { asking: true }
-  | { ask: string };
+  | { ask: string }
+  | { ci: string };
 
 /** Under the lines being edited into a suggestion: what's happening and how to finish. */
 function SuggestingBar() {
@@ -418,6 +420,7 @@ export function DiffPane() {
     return "reject" as const;
   }, []);
   const threads = st.useStore((s) => (s.github?.status === "ready" ? s.github.threads : null));
+  const checkNotes = st.useStore((s) => (s.github?.status === "ready" ? s.github.annotations : null));
   const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
   const sidebar = st.useStore((s) => s.sidebar);
   const outlineOpen = st.useStore((s) => s.outlineOpen);
@@ -455,9 +458,12 @@ export function DiffPane() {
         metadata: { thread: t.id },
       });
     }
+    // What CI said about lines of this file (on the PR's head commit, so the new side).
+    for (const a of checkNotes ?? [])
+      if (a.path === file.name) list.push({ side: "additions", lineNumber: a.end, metadata: { ci: a.id } });
     if (peekAt) list.push({ side: peekAt.side, lineNumber: peekAt.line, metadata: { peek: true } });
     return list;
-  }, [drafts, file, peekAt, threads, suggestingHere, asking, asks]);
+  }, [drafts, file, peekAt, threads, checkNotes, suggestingHere, asking, asks]);
 
   const selected = useMemo<SelectedLineRange | null>(() => {
     if (!cursor || suggestingHere) return null; // the editor owns the selection while suggesting
@@ -479,6 +485,8 @@ export function DiffPane() {
         <SuggestingBar />
       ) : "peek" in a.metadata ? (
         <PeekAnnotation />
+      ) : "ci" in a.metadata ? (
+        <CheckAnnotationRow id={a.metadata.ci} />
       ) : "thread" in a.metadata ? (
         <ThreadAnnotation id={a.metadata.thread} />
       ) : (

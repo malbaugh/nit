@@ -122,6 +122,27 @@ export type Thread = {
 
 export type PullRequest = { number: number; title: string; url: string; state: string; headSha: string };
 
+/** A CI check on the PR's head commit, as GitHub's checks box shows it. */
+export type Check = {
+  name: string;
+  state: "success" | "failure" | "pending" | "neutral";
+  url: string | null;
+  /** The status's description, or how the run ended. */
+  summary: string | null;
+};
+
+/** A line a check flagged (a lint error, a failing test's line), on the PR's head commit. */
+export type CheckAnnotation = {
+  id: string;
+  check: string;
+  path: string;
+  start: number;
+  end: number;
+  level: "failure" | "warning" | "notice";
+  title: string | null;
+  message: string;
+};
+
 export type GitHubState =
   | { status: "unavailable"; reason: string }
   | {
@@ -129,6 +150,10 @@ export type GitHubState =
       pr: PullRequest;
       viewer: string;
       threads: Thread[];
+      /** The PR's description, as written (Markdown). */
+      body: string;
+      checks: Check[];
+      annotations: CheckAnnotation[];
       /** Whether local lines match the PR: same commit and nothing uncommitted. */
       local: { headSha: string; dirty: boolean };
     };

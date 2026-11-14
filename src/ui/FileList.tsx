@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { Prefs } from "../types";
 import { ChangedTree } from "./ChangedTree";
 import { stats } from "./lines";
+import { PullRequestButton } from "./PullRequest";
 import { SettingsButton } from "./Settings";
 import * as st from "./state";
 import { IconButton, Kbd, ProgressRing, Resizer } from "./ui";
@@ -112,6 +113,7 @@ export function FileList() {
             {base}
           </span>
         </div>
+        <PullRequestButton />
       </header>
 
       <div className="flex h-7 shrink-0 items-center gap-2 px-3.5 text-[12px] text-ink-3">
