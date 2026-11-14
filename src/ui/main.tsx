@@ -7,6 +7,7 @@ import { handleKey } from "./actions";
 import { DiffPane } from "./DiffPane";
 import { FileList } from "./FileList";
 import { FilePane } from "./FilePane";
+import * as nav from "./nav";
 import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
 import { ReviewSheet } from "./ReviewSheet";
@@ -19,7 +20,7 @@ import { EmptyState, Kbd, TooltipProvider } from "./ui";
 const ICONS = { width: 15, height: 15, strokeWidth: 1.6 };
 
 // ?debug exposes the store for poking at state from the console.
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { nit: st, nitThemes: theme });
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { nit: st, nitNav: nav, nitThemes: theme });
 
 /** Base UI toasts (stacking, swipe to dismiss, timers pause on hover) in nit's look. */
 function Toasts() {
@@ -56,7 +57,8 @@ function App() {
   const browsing = st.useStore((s) => s.browse !== null);
 
   useEffect(() => {
-    st.load().then(st.restoreBackups);
+    // The URL says where you were: a reload or a shared link opens there.
+    st.load().then(nav.applyUrl).then(st.restoreBackups);
     void st.loadGitHub();
     // Threads refresh every minute while the tab is visible (and when you come back to it).
     const poll = setInterval(() => document.visibilityState === "visible" && st.loadGitHub(), 60_000);

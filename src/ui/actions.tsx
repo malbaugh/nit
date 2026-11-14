@@ -293,13 +293,7 @@ export const actions: Action[] = [
     label: "Toggle outline",
     keys: ["O"],
     icon: <SidebarExpand />,
-    run: () => {
-      const open = !st.get().outlineOpen;
-      st.set({ outlineOpen: open });
-      try {
-        localStorage.setItem("nit.outline", open ? "1" : "0");
-      } catch {}
-    },
+    run: () => st.set((s) => ({ outlineOpen: !s.outlineOpen })),
   },
 
   {

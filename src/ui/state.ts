@@ -9,7 +9,9 @@ export type Point = { side: Side; line: number };
 /** Side panel widths in px; saved in nit's database so every repo and reload keeps them. */
 export type Widths = { files: number; outline: number };
 export const DEFAULT_WIDTHS: Widths = { files: 272, outline: 248 };
-const savedWidths = (globalThis as { nitLayout?: Partial<Widths> | null }).nitLayout ?? null;
+/** View preferences, kept in nit's database (browser storage is per port, so per repo). */
+type Layout = Widths & { style: Style; sidebar: boolean; outlineOpen: boolean };
+const savedLayout = (globalThis as { nitLayout?: Partial<Layout> | null }).nitLayout ?? {};
 
 /** A file outside the review, opened read-only from a definition or reference. */
 export type Browse = { path: string; line: number; lines: number };
@@ -76,13 +78,8 @@ const stored = (key: string) => {
   }
 };
 
-const storedStyle = (): Style => {
-  try {
-    return localStorage.getItem("nit.style") === "unified" ? "unified" : "split";
-  } catch {
-    return "split";
-  }
-};
+// Before preferences moved to the database they lived in browser storage; read once as a fallback.
+const storedStyle = (): Style => savedLayout.style ?? (stored("nit.style") === "unified" ? "unified" : "split");
 
 let state: State = {
   data: null,
@@ -90,7 +87,7 @@ let state: State = {
   files: [],
   current: 0,
   style: storedStyle(),
-  sidebar: true,
+  sidebar: savedLayout.sidebar ?? true,
   viewed: new Set(),
   drafts: [],
   cursor: null,
@@ -101,12 +98,12 @@ let state: State = {
   palette: null,
   peek: null,
   outlines: {},
-  outlineOpen: stored("nit.outline") !== "0",
+  outlineOpen: savedLayout.outlineOpen ?? stored("nit.outline") !== "0",
   reviewOpen: false,
   settingsOpen: false,
   searchOpen: false,
   browse: null,
-  widths: { ...DEFAULT_WIDTHS, ...savedWidths },
+  widths: { files: savedLayout.files ?? DEFAULT_WIDTHS.files, outline: savedLayout.outline ?? DEFAULT_WIDTHS.outline },
   github: null,
   fullFiles: new Set(),
 };
@@ -124,6 +121,7 @@ const subscribe = (l: () => void) => {
   };
 };
 export const useStore = <T>(select: (s: State) => T): T => useSyncExternalStore(subscribe, () => select(state));
+export const subscribeToStore = subscribe;
 
 export const currentFile = (s = state) => s.files[s.current];
 
@@ -316,11 +314,7 @@ export function selection(s = state): { side: Side; start: number; end: number }
 // ---------- view
 
 export function toggleStyle() {
-  const style: Style = state.style === "split" ? "unified" : "split";
-  try {
-    localStorage.setItem("nit.style", style);
-  } catch {}
-  set({ style });
+  set({ style: state.style === "split" ? "unified" : "split" });
 }
 
 export function toggleViewed(advance = true) {
@@ -677,9 +671,24 @@ export function maxWidth(panel: keyof Widths) {
   return Math.max(200, Math.min(640, window.innerWidth - other - 480));
 }
 
-let saveWidths: ReturnType<typeof setTimeout> | undefined;
 export function setWidth(panel: keyof Widths, px: number) {
   set((s) => ({ widths: { ...s.widths, [panel]: Math.round(px) } }));
-  clearTimeout(saveWidths);
-  saveWidths = setTimeout(() => api.saveLayout(state.widths).catch(() => {}), 400);
 }
+
+// Any change to the view preferences saves them, whichever action made it.
+const layoutOf = (s: State): Layout => ({
+  ...s.widths,
+  style: s.style,
+  sidebar: s.sidebar,
+  outlineOpen: s.outlineOpen,
+});
+let savedLayoutKey = JSON.stringify(layoutOf(state));
+let saveLayout: ReturnType<typeof setTimeout> | undefined;
+subscribe(() => {
+  const layout = layoutOf(state);
+  const key = JSON.stringify(layout);
+  if (key === savedLayoutKey) return;
+  savedLayoutKey = key;
+  clearTimeout(saveLayout);
+  saveLayout = setTimeout(() => api.saveLayout(layout).catch(() => {}), 400);
+});

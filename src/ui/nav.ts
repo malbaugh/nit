@@ -4,29 +4,80 @@ import { api } from "./api";
 import { rows } from "./lines";
 import * as st from "./state";
 
-// ---------- back stack (⌘[)
+// ---------- where you are lives in the URL; browser history is the back stack (⌘[)
 
-type Place = { file: string; cursor: st.Point | null } | { browse: st.Browse };
-const history: Place[] = [];
+// ?file=a/b.ts&line=42 (&side=old for a removed line, &whole for the full file), or
+// ?open=c/d.ts&line=7 for a file outside the review. Other parameters (?debug) are kept.
+const KEYS = ["file", "open", "line", "side", "whole"];
 
-function remember() {
-  const { browse } = st.get();
+function placeUrl() {
+  const { browse, cursor, fullFiles } = st.get();
   const f = st.currentFile();
-  if (browse) history.push({ browse });
-  else if (f) history.push({ file: f.name, cursor: st.get().cursor });
-  else return;
-  if (history.length > 100) history.shift();
+  const q = new URLSearchParams(location.search);
+  for (const k of KEYS) q.delete(k);
+  if (browse) {
+    q.set("open", browse.path);
+    q.set("line", String(browse.line));
+  } else if (f) {
+    q.set("file", f.name);
+    if (cursor) q.set("line", String(cursor.line));
+    if (cursor?.side === "deletions") q.set("side", "old");
+    if (fullFiles.has(f.name)) q.set("whole", "");
+  }
+  // Bare flags (?whole, ?debug), and paths with readable slashes.
+  const search = q.toString().replace(/=(&|$)/g, "$1").replaceAll("%2F", "/");
+  return `${location.pathname}${search ? `?${search}` : ""}`;
 }
 
-export function goBack() {
-  const h = history.pop();
-  if (!h) return void (st.get().browse && st.set({ browse: null, peek: null }));
-  if ("browse" in h) return st.set({ browse: h.browse, peek: null });
-  const i = st.get().files.findIndex((f) => f.name === h.file);
-  if (i === -1) return;
-  st.openFile(i);
-  st.set({ cursor: h.cursor, anchor: null, peek: null, browse: null });
+let applying = false;
+let urlTimer: ReturnType<typeof setTimeout> | undefined;
+/** Rewrites the current history entry; cursor moves are coalesced so j/k stays cheap. */
+function syncUrl() {
+  clearTimeout(urlTimer);
+  urlTimer = undefined;
+  if (applying || !st.get().files.length) return;
+  const url = placeUrl();
+  if (url !== `${location.pathname}${location.search}`) history.replaceState(history.state, "", url);
 }
+st.subscribeToStore(() => {
+  if (urlTimer === undefined) urlTimer = setTimeout(syncUrl, 120);
+});
+
+/** Before a jump: the current entry keeps where you were, and a new entry takes the jump. */
+function remember() {
+  syncUrl();
+  const depth = ((history.state as { depth?: number } | null)?.depth ?? 0) + 1;
+  history.pushState({ depth }, "", location.href);
+}
+
+/** ⌘[ is the browser's Back, so both survive a reload; it never leaves nit. */
+export function goBack() {
+  if (((history.state as { depth?: number } | null)?.depth ?? 0) > 0) history.back();
+  else if (st.get().browse) st.set({ browse: null, peek: null });
+}
+
+/** Puts you where the URL says: on load, and on Back/Forward. */
+export async function applyUrl() {
+  const q = new URLSearchParams(location.search);
+  const line = Number(q.get("line")) || 0;
+  const open = q.get("open");
+  const file = q.get("file");
+  applying = true;
+  try {
+    if (open) {
+      st.set({ browse: { path: open, line: line || 1, lines: 0 }, peek: null, anchor: null, focused: null });
+      return;
+    }
+    const index = file ? st.get().files.findIndex((f) => f.name === file) : -1;
+    if (index === -1) return void (st.get().browse && st.set({ browse: null, peek: null }));
+    st.openFile(index);
+    if (q.has("whole")) await st.setFullFile(file as string, true);
+    if (line) await goToLine(index, q.get("side") === "old" ? "deletions" : "additions", line, false);
+  } finally {
+    applying = false;
+  }
+}
+window.addEventListener("popstate", () => void applyUrl());
 
 // ---------- outlines
 
@@ -128,9 +179,9 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
 export const closePeek = () => st.set({ peek: null });
 
 /** Puts the cursor on a line of a file in this review, showing the whole file if the line is folded away. */
-async function goToLine(index: number, side: Side, line: number) {
+async function goToLine(index: number, side: Side, line: number, record = true) {
   const files = st.get().files;
-  remember();
+  if (record) remember();
   st.openFile(index); // also leaves a file opened outside the review
   const path = files[index].name;
   const visible = rows(st.get().files[index], st.get().fullFiles.has(path)).some(
