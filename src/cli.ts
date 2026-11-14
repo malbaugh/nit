@@ -59,7 +59,10 @@ function patch() {
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
 const agent = createAgent(root, createSnapshots(root, project), store);
-const auth = createAuth();
+const auth = createAuth((error) =>
+  term.log(error ? `${term.c.red("✕")} Claude sign-in: ${error}` : `${term.c.green("✓")} signed in to Claude`),
+);
+agent.subscribe(term.agent);
 
 /** nit's own tools for Claude: guidelines from the base branch, and one file's diff. */
 function claudeTools(
@@ -312,8 +315,12 @@ const serve = (p: number) =>
           try {
             const result = await github.postReview(drafts, body.event as ReviewEvent, String(body.summary ?? ""));
             for (const id of result.posted) store.deleteDraft(id);
+            term.log(
+              `${term.c.green("✓")} posted to GitHub: ${result.posted.length} ${result.posted.length === 1 ? "comment" : "comments"}`,
+            );
             return json(result);
           } catch (e) {
+            term.log(`${term.c.red("✕")} GitHub didn't take the review: ${e instanceof Error ? e.message : String(e)}`);
             return fail(502, e instanceof Error ? e.message : String(e));
           }
         }),
@@ -340,6 +347,7 @@ const serve = (p: number) =>
       "/api/auth/login": {
         POST: guarded(async () => {
           try {
+            term.log(`${term.c.dim("·")} signing in to Claude in the browser`);
             return json(await auth.start());
           } catch (e) {
             return fail(500, e instanceof Error ? e.message : String(e));
@@ -588,6 +596,6 @@ const text = await patch();
 const files = text.match(/^diff --git /gm)?.length ?? 0;
 const add = text.match(/^\+(?!\+\+ )/gm)?.length ?? 0;
 const del = text.match(/^-(?!-- )/gm)?.length ?? 0;
-term.banner({ title: opened?.title ?? null, branch, base, files, add, del, url, root });
+term.banner({ title: opened?.title ?? null, pr: opened?.number ?? null, branch, base, files, add, del, url, root });
 term.keys({ o: { label: "open", run: openBrowser }, q: { label: "quit", run: () => process.exit(0) } });
 if (process.env.NIT_NO_OPEN !== "1") openBrowser();

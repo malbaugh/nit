@@ -87,7 +87,6 @@ function SignIn({ retry }: { retry: (() => void) | null }) {
                 <Button tone="ghost" onClick={close}>
                   Not now
                 </Button>
-                {/* biome-ignore lint/a11y/noAutofocus: the dialog's one action */}
                 <Button tone="primary" autoFocus onClick={start}>
                   Sign in with Claude
                 </Button>

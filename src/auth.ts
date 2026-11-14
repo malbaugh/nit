@@ -7,7 +7,8 @@ import type { AuthStatus } from "./types";
  * code that goes to the process's stdin. nit only starts it, relays the URL and the code, and
  * asks `claude auth status` whether it worked.
  */
-export function createAuth() {
+/** `ended` hears how each sign-in finished: null when it worked, else what went wrong. */
+export function createAuth(ended: (error: string | null) => void = () => {}) {
   let login: { proc: Bun.Subprocess<"pipe", "pipe", "pipe">; url: string | null; output: string } | null = null;
   let error: string | null = null;
 
@@ -57,6 +58,7 @@ export function createAuth() {
         .filter(Boolean)
         .at(-1);
       if (code !== 0) error = last ?? `claude auth login exited with ${code}`;
+      ended(code === 0 ? null : error);
       resolve(null);
     });
     setTimeout(() => resolve(null), 5000); // the browser opened and nothing was printed
