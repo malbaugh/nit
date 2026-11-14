@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { $ } from "bun";
 import { Octokit } from "octokit";
 import { parseRemote, token } from "./github";
+import * as term from "./term";
 
 export type PrRef = { owner: string | null; name: string | null; number: number };
 
@@ -16,7 +17,6 @@ export function parsePrArg(arg: string | undefined): PrRef | null {
 }
 
 const out = async (p: ReturnType<typeof $>) => (await p.nothrow().quiet().text()).trim();
-const log = (msg: string) => console.error(`nit: ${msg}`);
 const slug = (s: string) =>
   s
     .toLowerCase()
@@ -31,7 +31,7 @@ async function repoConfig(root: string): Promise<{ commands?: { checkout?: strin
   try {
     return Bun.TOML.parse(text.text()) as { commands?: { checkout?: string } };
   } catch (e) {
-    log(`ignoring .nit.toml on ${head}: ${e instanceof Error ? e.message : e}`);
+    term.warn(`ignoring .nit.toml on ${head}: ${e instanceof Error ? e.message : e}`);
     return {};
   }
 }
@@ -43,7 +43,10 @@ const isDir = (p: string) => existsSync(p) && statSync(p).isDirectory();
  * Uses the repo's `checkout` command if `.nit.toml` sets one (e.g. crbn), else the built-in:
  * reuse a worktree that already has the PR's branch, or make one beside the main checkout.
  */
-export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: string; base: string; number: number }> {
+export async function checkoutPr(
+  root: string,
+  ref: PrRef,
+): Promise<{ path: string; base: string; number: number; title: string }> {
   const remote = parseRemote(await out($`git remote get-url origin`.cwd(root)));
   if (!remote) throw new Error("this repo has no origin remote");
   if (
@@ -69,7 +72,7 @@ export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: stri
   });
   const branch = pr.head.ref;
   const base = `origin/${pr.base.ref}`;
-  log(`PR #${pr.number} — ${pr.title} (${branch} → ${pr.base.ref})`);
+  term.step(`PR #${pr.number} · ${branch} → ${pr.base.ref}`);
 
   const env = {
     ...process.env,
@@ -83,7 +86,7 @@ export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: stri
 
   if (command) {
     // The plug point: logs on stderr, the directory on the last line of stdout.
-    log(`checking out with .nit.toml: ${command}`);
+    term.step(`checking out with .nit.toml: ${command}`);
     const r = await $`sh -c ${command}`.cwd(root).env(env).nothrow();
     const last = r.stdout.toString().trim().split("\n").at(-1)?.trim() ?? "";
     if (r.exitCode !== 0 || !isDir(last))
@@ -94,7 +97,7 @@ export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: stri
     for (const block of worktrees.split("\n\n")) {
       if (block.includes(`branch refs/heads/${branch}\n`) || block.endsWith(`branch refs/heads/${branch}`)) {
         path = block.match(/^worktree (.+)$/m)?.[1] ?? null;
-        if (path) log(`using the existing worktree at ${path}`);
+        if (path) term.step(`using the worktree at ${term.tilde(path)}`);
         break;
       }
     }
@@ -102,7 +105,7 @@ export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: stri
       const main = dirname(await out($`git rev-parse --path-format=absolute --git-common-dir`.cwd(root)));
       path = join(dirname(main), `${basename(main)}-${slug(branch)}`);
       if (existsSync(path)) throw new Error(`${path} already exists and isn't a worktree for ${branch}`);
-      log(`creating a worktree at ${path}`);
+      term.step(`creating a worktree at ${term.tilde(path)}`);
       const hasGh = (await $`gh --version`.nothrow().quiet()).exitCode === 0;
       if (hasGh) {
         // gh sets push tracking, so `git push` from the worktree updates the PR (forks included).
@@ -121,5 +124,5 @@ export async function checkoutPr(root: string, ref: PrRef): Promise<{ path: stri
   }
 
   await $`git fetch origin ${pr.base.ref} --quiet`.cwd(path).nothrow().quiet();
-  return { path, base, number: pr.number };
+  return { path, base, number: pr.number, title: `PR #${pr.number}  ${pr.title}` };
 }

@@ -264,11 +264,7 @@ function Composer({ draft }: { draft: Draft }) {
 
       {preview ? (
         <div className="min-h-[76px] px-3.5 py-3">
-          {draft.body.trim() ? (
-            <Markdown source={draft.body} path={draft.path} />
-          ) : (
-            <p className="text-ink-3">Nothing to preview.</p>
-          )}
+          {draft.body.trim() ? <Markdown source={draft.body} /> : <p className="text-ink-3">Nothing to preview.</p>}
           {draft.suggestion !== null ? (
             <SuggestionDiff before={draft.anchor} after={draft.suggestion.split("\n")} />
           ) : null}
@@ -325,6 +321,13 @@ function Composer({ draft }: { draft: Draft }) {
           <Kbd k="Mod+Shift+p" quiet /> {preview ? "Write" : "Preview"}
         </span>
         <SaveState state={saving} hasContent={hasContent} />
+        <Button
+          tone="ghost"
+          onClick={() => (hasContent ? st.removeDraft(draft.id) : st.finishEditing())}
+          className="h-6 px-2"
+        >
+          {hasContent ? "Discard" : "Cancel"}
+        </Button>
         <Button tone="primary" onClick={st.finishEditing} className="h-6 px-2">
           Done <span className="opacity-70">{"⌘↵"}</span>
         </Button>
@@ -402,7 +405,6 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
       {rest.trim() ? (
         <div className="mt-1">
           <Markdown
-            path={draft.path}
             source={rest}
             onToggleTask={(i) => st.updateDraft(draft.id, { body: md.toggleTask(draft.body, i) })}
           />

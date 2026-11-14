@@ -1,9 +1,10 @@
+import { SidebarCollapse, SidebarExpand } from "iconoir-react/regular";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { fuzzy, Kbd, paintMatches, Resizer, TextSegmented } from "./ui";
+import { fuzzy, IconButton, paintMatches, Resizer, TextSegmented } from "./ui";
 
 /** One letter per kind, coloured quietly so the names stay the focus. */
 const KIND: Record<string, { letter: string; tone: string }> = {
@@ -56,6 +57,23 @@ function entries(symbols: Sym[], old: Sym[] | null, added: Set<number>, removed:
     const status = before && !before.has(key(s)) ? "added" : hit || touched.has(key(s)) ? "changed" : null;
     return { ...s, depth, status };
   });
+}
+
+/**
+ * Hides or shows the outline (O). It sits in the outline's header while open and at the right
+ * of the code header while closed, mirroring the file list's toggle on the left.
+ */
+export function OutlineToggle() {
+  const open = st.useStore((s) => s.outlineOpen);
+  return (
+    <IconButton
+      label={open ? "Hide outline" : "Show outline"}
+      keys="O"
+      onClick={() => st.set((s) => ({ outlineOpen: !s.outlineOpen }))}
+    >
+      {open ? <SidebarCollapse className="-scale-x-100" /> : <SidebarExpand className="-scale-x-100" />}
+    </IconButton>
+  );
 }
 
 export function OutlinePanel() {
@@ -126,7 +144,7 @@ export function OutlinePanel() {
         <span className="text-[13px] font-medium text-ink">Outline</span>
         {view ? <span className="text-[12px] text-ink-3 tabular-nums">{view.all.length}</span> : null}
         <span className="ml-auto">
-          <Kbd k="O" quiet />
+          <OutlineToggle />
         </span>
       </header>
       <div className="flex h-7 shrink-0 items-center gap-1 px-2.5">

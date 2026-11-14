@@ -327,9 +327,21 @@ pre[style*="--hls-dark"] span {
   background: var(--hover);
   box-shadow: 0 0 0 1px var(--line);
 }
+/* GitHub draws images inline (bots put 16px icons in headings and summaries); Tailwind's
+   base makes every img a block. */
 .md img {
+  display: inline;
   max-width: 100%;
+  vertical-align: text-bottom;
   border-radius: var(--radius-control);
+}
+.md img[width="16"],
+.md img[height="16"] {
+  border-radius: 0;
+}
+.md pre.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 @keyframes fade-in {

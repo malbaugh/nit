@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import { CodeBlock, langFor } from "./Code";
+import { CodeBlock } from "./Code";
 
 function SuggestionBlock({ source }: { source: string }) {
   return (
@@ -37,14 +37,10 @@ const REHYPE = [rehypeRaw, rehypeSanitize];
 export const Markdown = memo(function Markdown({
   source,
   onToggleTask,
-  path,
 }: {
   source: string;
   onToggleTask?: (index: number) => void;
-  /** The commented file: a code block without a language is highlighted as this file's language. */
-  path?: string;
 }) {
-  const fallbackLang = path ? langFor(path) : "";
   const taskIndex = useRef(0);
   taskIndex.current = 0;
 
@@ -62,7 +58,15 @@ export const Markdown = memo(function Markdown({
       const lang = /language-([\w+-]+)/.exec(classes)?.[1];
       const source = hastText(code).replace(/\n$/, "");
       if (lang === "suggestion") return <SuggestionBlock source={source} />;
-      return <CodeBlock source={source} lang={lang ?? fallbackLang} />;
+      // As on GitHub, a fence without a language is plain text; it's usually prose (bot
+      // prompts, logs), so it wraps instead of scrolling sideways.
+      if (!lang)
+        return (
+          <pre className="wrap">
+            <code>{source}</code>
+          </pre>
+        );
+      return <CodeBlock source={source} lang={lang} />;
     },
     input: ({ checked, type }) => {
       if (type !== "checkbox") return null;

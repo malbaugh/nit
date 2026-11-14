@@ -6,16 +6,14 @@ import * as git from "./git";
 import { createGitHub } from "./github";
 import { createNavigator } from "./navigate";
 import { openStore } from "./store";
+import * as term from "./term";
 import { themeBoot } from "./theme-boot";
 import type { Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
 const uiDir = uiDirFor(dev);
 
-const fail0 = (msg: string): never => {
-  console.error(`nit: ${msg}`);
-  process.exit(1);
-};
+const fail0 = term.fail;
 
 const here = (await git.repoRoot()) || fail0("not inside a git repository");
 // `nit 2227`, `nit #2227` or `nit <pr-url>` reviews a pull request in its own worktree.
@@ -28,7 +26,8 @@ const root = opened?.path ?? here;
 const base = opened?.base ?? arg ?? (await git.defaultBase(root));
 const forcedPr = opened?.number ?? (Number(process.env.NIT_PR) || null);
 const mergeBase = await git.mergeBase(root, base);
-if (!mergeBase) fail0(`no merge base between ${base} and HEAD. Fetch it first (git fetch origin), or pass a branch.`);
+if (!mergeBase)
+  fail0(`no common history with ${base}. Fetch it first (git fetch origin), or pass the branch to compare against.`);
 const branch = await git.currentBranch(root);
 const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
@@ -138,7 +137,7 @@ const serve = (p: number) =>
     development: false,
     // Never send stack traces to the page; log them where the user started nit.
     error(e) {
-      console.error(e);
+      term.error(e);
       return fail(500, "Something went wrong in nit. Details are in the terminal where it's running.");
     },
     routes: {
@@ -331,5 +330,12 @@ try {
 port = server.port!;
 
 const url = `http://127.0.0.1:${server.port}`;
-console.log(`nit: reviewing ${root} against ${base}\n  ${url}`);
-if (process.env.NIT_NO_OPEN !== "1") Bun.spawn([process.platform === "darwin" ? "open" : "xdg-open", url]);
+const openBrowser = () => Bun.spawn([process.platform === "darwin" ? "open" : "xdg-open", url]);
+// Counts for the banner, straight from the patch the page shows.
+const text = await patch();
+const files = text.match(/^diff --git /gm)?.length ?? 0;
+const add = text.match(/^\+(?!\+\+ )/gm)?.length ?? 0;
+const del = text.match(/^-(?!-- )/gm)?.length ?? 0;
+term.banner({ title: opened?.title ?? null, branch, base, files, add, del, url, root });
+term.keys({ o: { label: "open", run: openBrowser }, q: { label: "quit", run: () => process.exit(0) } });
+if (process.env.NIT_NO_OPEN !== "1") openBrowser();

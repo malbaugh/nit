@@ -6,6 +6,7 @@ import { api } from "./api";
 import { HIGHLIGHTER } from "./Code";
 import { DIFF_CSS, linkKey, revealLine } from "./DiffPane";
 import * as nav from "./nav";
+import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
 import { useTheme } from "./theme";
@@ -30,6 +31,7 @@ export function FilePane() {
   const browse = st.useStore((s) => s.browse);
   const peekAt = st.useStore((s) => s.peek?.at);
   const sidebar = st.useStore((s) => s.sidebar);
+  const outlineOpen = st.useStore((s) => s.outlineOpen);
   const outline = st.useStore((s) => (browse ? s.outlines[browse.path] : undefined));
   const { darkThemeName, lightThemeName, resolvedColorScheme } = useTheme();
   const [text, setText] = useState<{ path: string; contents: string | null; error?: string } | null>(null);
@@ -131,6 +133,7 @@ export function FilePane() {
             <Xmark />
           </IconButton>
         </div>
+        {outlineOpen ? null : <OutlineToggle />}
       </header>
       <div data-diff-scroll className="min-h-0 flex-1 overflow-auto">
         {file ? (

@@ -27,7 +27,7 @@ function Avatar({ c, size = 20 }: { c: ThreadComment; size?: number }) {
   );
 }
 
-function Comment({ c, path }: { c: ThreadComment; path: string }) {
+function Comment({ c }: { c: ThreadComment }) {
   return (
     <div className="flex gap-2.5 py-2.5">
       <Avatar c={c} />
@@ -39,7 +39,7 @@ function Comment({ c, path }: { c: ThreadComment; path: string }) {
           </a>
         </div>
         <div className="mt-0.5">
-          <Markdown source={c.body} path={path} />
+          <Markdown source={c.body} />
         </div>
       </div>
     </div>
@@ -77,7 +77,7 @@ export function ThreadAnnotation({ id }: { id: string }) {
           <>
             <div className="divide-y divide-line px-3.5">
               {thread.comments.map((c) => (
-                <Comment key={c.id} c={c} path={thread.path} />
+                <Comment key={c.id} c={c} />
               ))}
             </div>
             {replyIds

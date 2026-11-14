@@ -14,6 +14,7 @@ import { HIGHLIGHTER } from "./Code";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
 import * as nav from "./nav";
+import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
 import { ThreadAnnotation } from "./Threads";
@@ -130,6 +131,7 @@ export function DiffPane() {
   const threads = st.useStore((s) => (s.github?.status === "ready" ? s.github.threads : null));
   const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
   const sidebar = st.useStore((s) => s.sidebar);
+  const outlineOpen = st.useStore((s) => s.outlineOpen);
 
   useEffect(() => {
     if (file) nav.loadOutline(file.name, file.prevName);
@@ -252,6 +254,7 @@ export function DiffPane() {
             </Toggle>
           </Tooltip>
         </div>
+        {outlineOpen ? null : <OutlineToggle />}
       </header>
       <div data-diff-scroll className="min-h-0 flex-1 overflow-auto">
         <FileDiff<Meta, undefined>

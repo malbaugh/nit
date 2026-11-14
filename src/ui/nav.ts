@@ -25,7 +25,10 @@ function placeUrl() {
     if (fullFiles.has(f.name)) q.set("whole", "");
   }
   // Bare flags (?whole, ?debug), and paths with readable slashes.
-  const search = q.toString().replace(/=(&|$)/g, "$1").replaceAll("%2F", "/");
+  const search = q
+    .toString()
+    .replace(/=(&|$)/g, "$1")
+    .replaceAll("%2F", "/");
   return `${location.pathname}${search ? `?${search}` : ""}`;
 }
 

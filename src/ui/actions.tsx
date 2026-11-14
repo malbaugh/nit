@@ -376,6 +376,12 @@ export function handleKey(e: KeyboardEvent) {
     st.set({ searchOpen: !s.searchOpen, palette: null });
     return;
   }
+  // An open composer closes on Esc even after focus has left it (an empty one disappears).
+  if (s.editing && !typing && e.key === "Escape" && !s.palette && !s.searchOpen) {
+    e.preventDefault();
+    st.finishEditing();
+    return;
+  }
   // The sheet traps focus and handles Esc itself.
   if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen) return;
   if (e.key === "Escape") {
