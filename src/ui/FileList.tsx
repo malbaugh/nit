@@ -1,9 +1,66 @@
-import { ChatLines, GitBranch, Search } from "iconoir-react/regular";
+import { Menu } from "@base-ui/react/menu";
+import { ChatLines, Check, EyeClosed, GitBranch, Search } from "iconoir-react/regular";
 import { useMemo } from "react";
+import type { Prefs } from "../types";
 import { ChangedTree } from "./ChangedTree";
+import { stats } from "./lines";
 import { SettingsButton } from "./Settings";
 import * as st from "./state";
 import { IconButton, Kbd, ProgressRing, Resizer } from "./ui";
+
+const HIDE: { pref: keyof Prefs; label: string; category?: string }[] = [
+  { pref: "hideGenerated", label: "Generated files", category: "generated" },
+  { pref: "hideTests", label: "Tests", category: "test" },
+  { pref: "hideDocs", label: "Docs", category: "docs" },
+  { pref: "hideWhitespace", label: "Whitespace changes", category: "formatting" },
+  { pref: "hideViewed", label: "Viewed files" },
+];
+
+/**
+ * Sets aside what isn't the change itself: lockfiles, generated code, snapshots (as
+ * .gitattributes or convention says), tests, docs, and the files you've already viewed.
+ */
+function HideMenu({ hidden }: { hidden: number }) {
+  const prefs = st.useStore((s) => s.prefs);
+  const categories = st.useStore((s) => s.categories);
+  const viewed = st.useStore((s) => s.viewed.size);
+  const count = (c?: string) => (c ? Object.values(categories).filter((x) => x === c).length : viewed);
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        className={`flex h-5 items-center gap-1 rounded-[5px] px-1 tabular-nums transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink-2 data-popup-open:bg-hover-2 ${hidden ? "text-ink-2" : ""}`}
+        aria-label="Hide files"
+      >
+        <EyeClosed width={13} height={13} />
+        {hidden ? `${hidden} hidden` : null}
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner className="z-50 outline-none" sideOffset={4} align="start">
+          <Menu.Popup className="min-w-[210px] origin-(--transform-origin) rounded-card bg-surface p-1 shadow-overlay outline-none transition-[opacity,scale] duration-100 ease-out-strong data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+            <div className="px-2 pt-1 pb-1.5 text-[11.5px] text-ink-3">Hide</div>
+            {HIDE.map((h) => (
+              <Menu.CheckboxItem
+                key={h.pref}
+                checked={!!prefs[h.pref]}
+                onCheckedChange={(on) => st.setPrefs({ [h.pref]: on })}
+                closeOnClick={false}
+                className="flex h-7 cursor-default items-center gap-2.5 rounded-[6px] px-2 text-[12.5px] text-ink-2 outline-none select-none data-highlighted:bg-hover-2 data-highlighted:text-ink"
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center text-accent-ink">
+                  <Menu.CheckboxItemIndicator>
+                    <Check width={14} height={14} />
+                  </Menu.CheckboxItemIndicator>
+                </span>
+                <span className="flex-1">{h.label}</span>
+                <span className="text-[11.5px] text-ink-3 tabular-nums">{count(h.category)}</span>
+              </Menu.CheckboxItem>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
 
 export function FileList() {
   const agentRunning = st.useStore((s) => s.agent?.state === "running" || s.job?.state === "running");
@@ -17,6 +74,21 @@ export function FileList() {
   const branch = st.useStore((s) => s.data?.branch);
   const base = st.useStore((s) => s.data?.base);
   const done = useMemo(() => files.reduce((n, f) => n + (viewed.has(f.name) ? 1 : 0), 0), [files, viewed]);
+  const categories = st.useStore((s) => s.categories);
+  const hidden = st.useStore((s) => s.files.filter((f) => st.hiddenFile(f.name, s)).length);
+  // The size of the change itself: generated files, tests and docs don't count.
+  const code = useMemo(
+    () =>
+      files.reduce(
+        (n, f) => {
+          if (categories[f.name]) return n;
+          const { add, del } = stats(f);
+          return { add: n.add + add, del: n.del + del };
+        },
+        { add: 0, del: 0 },
+      ),
+    [files, categories],
+  );
 
   return (
     <aside className="relative flex min-h-0 shrink-0 flex-col bg-canvas shadow-[1px_0_0_var(--line)]" style={{ width }}>
@@ -45,6 +117,10 @@ export function FileList() {
       <div className="flex h-7 shrink-0 items-center gap-2 px-3.5 text-[12px] text-ink-3">
         <span className="font-medium text-ink-2">Files</span>
         <span className="tabular-nums">{files.length}</span>
+        <span className="tabular-nums" title="Lines changed, not counting generated files, tests and docs">
+          <span className="text-green">+{code.add}</span> <span className="text-red">−{code.del}</span>
+        </span>
+        <HideMenu hidden={hidden} />
         {changed ? (
           <span className="text-orange tabular-nums" title="Files you marked viewed that changed since">
             · {changed} changed since viewed

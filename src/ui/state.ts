@@ -5,6 +5,7 @@ import {
   type AskThread,
   DEFAULT_PREFS,
   type Draft,
+  type FileCategory,
   type FileContents,
   type GitHubState,
   type Job,
@@ -62,6 +63,8 @@ export type State = {
   style: Style;
   sidebar: boolean;
   viewed: Set<string>;
+  /** Changed files that aren't the change itself (generated, tests, docs). */
+  categories: Record<string, FileCategory>;
   /** Files you marked viewed that have changed since: to look at again. */
   changedSinceViewed: Set<string>;
   /** The file whose diff shows only what changed since you viewed it. */
@@ -136,6 +139,7 @@ let state: State = {
   viewed: new Set(),
   changedSinceViewed: new Set(),
   sinceViewed: null,
+  categories: {},
   drafts: [],
   cursor: null,
   anchor: null,
@@ -236,7 +240,7 @@ const hydrateAround = (i: number) => {
 export async function load() {
   try {
     const requested = Date.now();
-    const data = await api.review();
+    const data = await api.review(state.prefs.hideWhitespace);
     // Coming back to the tab reloads; an unchanged patch keeps the hydrated files and outlines.
     const same = data.patch === state.data?.patch;
     if (!same) contents.clear();
@@ -252,7 +256,10 @@ export async function load() {
           .sort((a, b) => treeOrder(a.name, b.name));
     const before = currentFile()?.name;
     set((s) => {
-      const current = Math.max(0, before ? files.findIndex((f) => f.name === before) : 0);
+      // On first load, the first file the list shows: not a lockfile it sets aside.
+      const shown = (f: FileDiffMetadata) =>
+        !hiddenFile(f.name, { ...s, categories: data.categories, viewed: new Set(data.viewed) });
+      const current = Math.max(0, before ? files.findIndex((f) => f.name === before) : files.findIndex(shown));
       // The newer copy of each draft wins. A local draft the server doesn't list is kept if it
       // is unsaved, open, or changed after this request started (the response may predate its save).
       const listed = data.drafts.filter((d) => !deleted.has(d.id)); // deletions still in flight
@@ -278,6 +285,7 @@ export async function load() {
         drafts,
         viewed: new Set(data.viewed),
         changedSinceViewed: new Set(data.changedSinceViewed),
+        categories: data.categories,
         asks: data.asks,
         outlines: same ? s.outlines : {}, // changed files re-read their symbols on demand
         error: null,
@@ -421,8 +429,9 @@ export function toggleViewed(advance = true) {
   set({ viewed, changedSinceViewed, sinceViewed: null });
   api.setViewed(file.name, now).catch(() => fail("Couldn't save viewed state. Is nit still running?"));
   if (now && advance) {
-    const i = state.files.findIndex((f, i) => i > state.current && !viewed.has(f.name));
-    const wrap = i === -1 ? state.files.findIndex((f) => !viewed.has(f.name)) : i;
+    const next = (f: FileDiffMetadata) => !viewed.has(f.name) && !hiddenFile(f.name);
+    const i = state.files.findIndex((f, i) => i > state.current && next(f));
+    const wrap = i === -1 ? state.files.findIndex(next) : i;
     if (wrap !== -1) openFile(wrap);
   }
 }
@@ -450,12 +459,32 @@ export function fail(message: string) {
 let savePrefs: ReturnType<typeof setTimeout> | undefined;
 /** Changes preferences at once and saves them shortly after (a slider sends one save, not twenty). */
 export function setPrefs(patch: Partial<Prefs>) {
+  const respace = "hideWhitespace" in patch && patch.hideWhitespace !== state.prefs.hideWhitespace;
   set((s) => ({ prefs: { ...s.prefs, ...patch } }));
+  if (respace) void load(); // a different diff to read
   clearTimeout(savePrefs);
   savePrefs = setTimeout(
     () => api.savePrefs(state.prefs).catch(() => fail("Couldn't save your settings. Is nit still running?")),
     300,
   );
+}
+
+/** Whether the file list sets this file aside (Hide generated / tests / docs / viewed). */
+export function hiddenFile(name: string, s: State = state) {
+  const c = s.categories[name];
+  return (
+    (c === "generated" && s.prefs.hideGenerated) ||
+    (c === "test" && s.prefs.hideTests) ||
+    (c === "docs" && s.prefs.hideDocs) ||
+    (c === "formatting" && s.prefs.hideWhitespace) ||
+    (s.prefs.hideViewed && s.viewed.has(name))
+  );
+}
+
+/** j / k: the next or previous file the list shows, skipping the ones set aside. */
+export function stepFile(dir: 1 | -1) {
+  for (let i = state.current + dir; i >= 0 && i < state.files.length; i += dir)
+    if (!hiddenFile(state.files[i].name)) return openFile(i);
 }
 
 /** The current conversation about exactly these lines, if there is one (outdated ones aren't). */

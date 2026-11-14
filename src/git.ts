@@ -63,9 +63,13 @@ export async function projectId(root: string) {
   return createHash("sha1").update(key).digest("hex").slice(0, 16);
 }
 
-/** Committed, staged and unstaged changes since the merge base, plus untracked files. */
-export async function diff(root: string, base: string) {
-  const tracked = await $`git diff --no-color --no-ext-diff -M ${base}`.cwd(root).quiet().text();
+/**
+ * Committed, staged and unstaged changes since the merge base, plus untracked files.
+ * `ignoreSpace` leaves out whitespace changes (-w); a file where only whitespace changed drops out.
+ */
+export async function diff(root: string, base: string, ignoreSpace = false) {
+  const w = ignoreSpace ? ["-w"] : [];
+  const tracked = await $`git diff --no-color --no-ext-diff -M ${w} ${base}`.cwd(root).quiet().text();
   const untracked = (await $`git ls-files --others --exclude-standard`.cwd(root).quiet().text())
     .split("\n")
     .filter(Boolean);

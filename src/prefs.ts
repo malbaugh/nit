@@ -12,6 +12,11 @@ const FIELDS = {
   effort: z.enum(["default", "low", "medium", "high", "xhigh", "max"]),
   nits: z.boolean(),
   auth: z.enum(["login", "apiKey"]),
+  hideGenerated: z.boolean(),
+  hideTests: z.boolean(),
+  hideDocs: z.boolean(),
+  hideViewed: z.boolean(),
+  hideWhitespace: z.boolean(),
 } satisfies Record<keyof Prefs, z.ZodType>;
 
 /** What the settings screen may save. Keys nit doesn't know (an older or newer page's) are dropped. */

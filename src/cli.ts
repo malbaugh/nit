@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createAgent } from "./agent";
 import { createAuth } from "./auth";
 import { buildUI, isStale, uiDirFor } from "./build";
+import { categorize } from "./categories";
 import { checkoutPr, parsePrArg } from "./checkout";
 import { commandSettings, openInEditor, saveUserCommands } from "./config";
 import {
@@ -53,11 +54,14 @@ const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
 // A stable port per repo keeps the tab's address (and its local backups) across restarts.
 // The diff is read by the page and by navigation; reuse one read for a couple of seconds.
-let patchCache: { at: number; text: Promise<string> } | null = null;
-function patch() {
-  if (!patchCache || Date.now() - patchCache.at > 2000)
-    patchCache = { at: Date.now(), text: git.diff(root, mergeBase) };
-  return patchCache.text;
+const patchCache = new Map<boolean, { at: number; text: Promise<string> }>();
+/** The review's patch; `ignoreSpace` is the one you read with whitespace changes hidden. */
+function patch(ignoreSpace = false) {
+  const hit = patchCache.get(ignoreSpace);
+  if (hit && Date.now() - hit.at < 2000) return hit.text;
+  const text = git.diff(root, mergeBase, ignoreSpace);
+  patchCache.set(ignoreSpace, { at: Date.now(), text });
+  return text;
 }
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
@@ -262,14 +266,22 @@ const serve = (p: number) =>
     },
     routes: {
       "/api/review": {
-        GET: guarded(async () => {
-          const text = await patch();
+        GET: guarded(async (req) => {
+          const ignoreSpace = new URL(req.url).searchParams.has("w");
+          const [text, spaced] = await Promise.all([patch(), patch(true)]);
+          // Files in the patch that drop out of the -w one changed only whitespace.
+          const kept = new Set(changedPaths(spaced));
+          const formatting = changedPaths(text).filter((p) => !kept.has(p));
+          const categories = await categorize(root, changedPaths(text));
+          for (const p of formatting) categories[p] = "formatting";
           const data: ReviewData = {
             repo: root,
             branch,
             base,
             mergeBase,
-            patch: text,
+            // Read without whitespace changes, but every file is still listed (to hide or show).
+            patch: ignoreSpace ? spaced + formatting.map((p) => fileDiff(text, p)).join("") : text,
+            categories,
             drafts: store.drafts(),
             ...viewedNow(text),
             asks: await placeAsks(),

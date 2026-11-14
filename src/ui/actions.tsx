@@ -253,7 +253,7 @@ export const actions: Action[] = [
     label: "Next file",
     keys: ["j"],
     icon: <ArrowDown />,
-    run: () => st.openFile(st.get().current + 1),
+    run: () => st.stepFile(1),
   },
   {
     id: "prev-file",
@@ -261,7 +261,7 @@ export const actions: Action[] = [
     label: "Previous file",
     keys: ["k"],
     icon: <ArrowUp />,
-    run: () => st.openFile(st.get().current - 1),
+    run: () => st.stepFile(-1),
   },
   {
     id: "next-change",

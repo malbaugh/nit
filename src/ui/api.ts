@@ -70,7 +70,7 @@ export const api = {
   saveCommands: (patch: Partial<Record<"checkout" | "editor", string | null>>) =>
     call<CommandSettings>("PUT", "/api/settings/commands", patch),
   openInEditor: (path: string, line: number) => call<{ ran: string }>("POST", "/api/open-in-editor", { path, line }),
-  review: () => call<ReviewData>("GET", "/api/review"),
+  review: (ignoreSpace: boolean) => call<ReviewData>("GET", `/api/review${ignoreSpace ? "?w" : ""}`),
   file: (path: string, prev?: string) =>
     call<FileContents>("GET", `/api/file?${new URLSearchParams({ path, prev: prev ?? "" })}`),
   saveDraft: (d: Draft) => call<Draft>("PUT", "/api/drafts", d),

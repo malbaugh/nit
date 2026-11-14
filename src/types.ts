@@ -39,12 +39,17 @@ export type ReviewData = {
   mergeBase: string;
   patch: string;
   drafts: Draft[];
+  /** Changed files that aren't the change itself: generated, tests, docs (others are code). */
+  categories: Record<string, FileCategory>;
   /** Files marked viewed whose diff hasn't changed since. */
   viewed: string[];
   /** Files marked viewed whose diff has changed since: to look at again. */
   changedSinceViewed: string[];
   asks: AskThread[];
 };
+
+/** "formatting": only whitespace changed. */
+export type FileCategory = "generated" | "test" | "docs" | "formatting";
 
 /** A conversation with Claude about some lines, kept for the review so you can come back to it. */
 export type AskThread = {
@@ -196,6 +201,13 @@ export type Prefs = {
   nits: boolean;
   /** How Claude signs in: Claude Code's own login, or the API key saved in nit (your keychain). */
   auth: "login" | "apiKey";
+  /** Files set aside in the file list (and skipped by j/k); search and links still open them. */
+  hideGenerated: boolean;
+  hideTests: boolean;
+  hideDocs: boolean;
+  hideViewed: boolean;
+  /** Diff ignoring whitespace (git diff -w); files where only whitespace changed are set aside. */
+  hideWhitespace: boolean;
 };
 
 export const DEFAULT_PREFS: Prefs = {
@@ -207,6 +219,11 @@ export const DEFAULT_PREFS: Prefs = {
   effort: "default",
   nits: true,
   auth: "login",
+  hideGenerated: true,
+  hideTests: false,
+  hideDocs: false,
+  hideViewed: false,
+  hideWhitespace: false,
 };
 
 /** Your GitHub login for this repo's host: the token saved in nit, else the GitHub CLI's. */

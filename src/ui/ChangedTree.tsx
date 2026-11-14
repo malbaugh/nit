@@ -139,13 +139,20 @@ export function ChangedTree() {
   const changedSinceViewed = st.useStore((s) => s.changedSinceViewed);
   const drafts = st.useStore((s) => s.drafts);
 
+  // The files the list shows: the ones set aside (Hide generated, tests…) aren't in the tree.
+  const shown = st.useStore((s) =>
+    s.files
+      .filter((f) => !st.hiddenFile(f.name, s))
+      .map((f) => f.name)
+      .join("\n"),
+  );
   const { model } = useFileTree({
-    paths: st.get().files.map((f) => f.name),
+    paths: shown ? shown.split("\n") : [],
     presorted: true, // the store keeps files in tree order (lines.treeOrder)
     initialExpansion: "open",
     flattenEmptyDirectories: true,
     itemHeight: 28,
-    gitStatus: statusOf(st.get().files),
+    gitStatus: statusOf(st.get().files.filter((f) => !st.hiddenFile(f.name))),
     renderRowDecoration: decoration,
     unsafeCSS: TREE_CSS,
     icons: { set: "complete", colored: true, spriteSheet: SPRITE },
@@ -163,9 +170,10 @@ export function ChangedTree() {
 
   // A new patch (a reload that changed files) replaces the tree's paths and statuses.
   useEffect(() => {
-    model.resetPaths(files.map((f) => f.name));
-    model.setGitStatus(statusOf(files));
-  }, [model, files]);
+    const paths = shown ? shown.split("\n") : [];
+    model.resetPaths(paths);
+    model.setGitStatus(statusOf(files.filter((f) => paths.includes(f.name))));
+  }, [model, files, shown]);
 
   // Drafts and viewed marks live in the decorations, which read the store when drawn.
   // biome-ignore lint/correctness/useExhaustiveDependencies: redraw when either changes
