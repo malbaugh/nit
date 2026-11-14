@@ -16,6 +16,7 @@ import {
   Link,
   List,
   NavArrowRight,
+  OpenNewWindow,
   Page,
   SidebarExpand,
   Sparks,
@@ -268,6 +269,12 @@ function lineMenu(target: Element): MenuItem[] | null {
         ]
       : []),
     {
+      label: "Open in editor",
+      icon: <OpenNewWindow />,
+      keys: "o",
+      run: () => void nav.openInEditor(),
+    },
+    {
       label: range.start === range.end ? "Copy line" : "Copy lines",
       icon: <Copy />,
       run: () =>
@@ -317,6 +324,7 @@ export function DiffPane() {
 
   const { darkThemeName: darkTheme, lightThemeName: lightTheme, resolvedColorScheme: scheme } = useTheme();
 
+  const prefs = st.useStore((s) => s.prefs);
   const options = useMemo(
     () => ({
       theme: { dark: darkTheme, light: lightTheme },
@@ -324,8 +332,9 @@ export function DiffPane() {
       diffStyle: style,
       preferredHighlighter: HIGHLIGHTER,
       expandUnchanged: full,
-      diffIndicators: "bars" as const,
-      lineDiffType: "word-alt" as const,
+      diffIndicators: prefs.indicators,
+      lineDiffType: prefs.inlineChanges === "word" ? ("word-alt" as const) : prefs.inlineChanges,
+      overflow: prefs.wrap ? ("wrap" as const) : ("scroll" as const),
       hunkSeparators: "line-info" as const,
       disableFileHeader: true,
       enableGutterUtility: true,
@@ -354,7 +363,7 @@ export function DiffPane() {
         void nav.lookup("definition", { col: t.lineCharStart });
       },
     }),
-    [style, full, darkTheme, lightTheme, scheme],
+    [style, full, darkTheme, lightTheme, scheme, prefs.indicators, prefs.inlineChanges, prefs.wrap],
   );
 
   const peekAt = st.useStore((s) => s.peek?.at);

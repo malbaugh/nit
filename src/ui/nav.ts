@@ -64,6 +64,24 @@ export function goBack() {
   else if (st.get().browse) st.set({ browse: null, peek: null });
 }
 
+/** Opens the file you're on, at your line, in your editor (the editor command in settings). */
+export async function openInEditor() {
+  const { browse, cursor } = st.get();
+  const file = st.currentFile();
+  // A removed line isn't in your copy of the file: open it at the top.
+  const at = browse
+    ? { path: browse.path, line: browse.line }
+    : file
+      ? { path: file.name, line: cursor?.side === "additions" ? cursor.line : 1 }
+      : null;
+  if (!at) return;
+  try {
+    await api.openInEditor(at.path, at.line);
+  } catch (e) {
+    st.fail(e instanceof Error ? e.message : "Couldn't open your editor.");
+  }
+}
+
 /** The search screen is a place too: Back from a result you opened returns to it. */
 export function openSearch() {
   if (st.get().searchOpen) return;

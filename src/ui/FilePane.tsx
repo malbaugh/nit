@@ -64,10 +64,12 @@ export function FilePane() {
     if (ready && line) revealLine("additions", line);
   }, [ready, line]);
 
+  const wrap = st.useStore((s) => s.prefs.wrap);
   const options = useMemo(
     () => ({
       theme: { dark: darkThemeName, light: lightThemeName },
       themeType: resolvedColorScheme,
+      overflow: wrap ? ("wrap" as const) : ("scroll" as const),
       disableFileHeader: true,
       preferredHighlighter: HIGHLIGHTER,
       lineHoverHighlight: "number" as const,
@@ -89,7 +91,7 @@ export function FilePane() {
         void nav.lookup("definition", { col: t.lineCharStart });
       },
     }),
-    [darkThemeName, lightThemeName, resolvedColorScheme],
+    [darkThemeName, lightThemeName, resolvedColorScheme, wrap],
   );
 
   if (!browse) return null;

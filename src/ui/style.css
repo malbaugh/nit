@@ -154,8 +154,9 @@
 diffs-container {
   --diffs-font-family: var(--font-mono);
   --diffs-header-font-family: var(--font-sans);
-  --diffs-font-size: 12.5px;
-  --diffs-line-height: 20px;
+  /* --code-size is the settings screen's code size (main.tsx). */
+  --diffs-font-size: var(--code-size, 12.5px);
+  --diffs-line-height: round(up, calc(var(--code-size, 12.5px) * 1.6), 1px);
   --diffs-bg-buffer-override: var(--page);
   --diffs-bg-context-override: var(--page);
   --diffs-bg-context-gutter-override: var(--page);

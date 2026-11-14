@@ -158,6 +158,37 @@ export type AgentRun = {
 };
 
 /** A read-only Claude job: a co-review of the diff, or a question about lines. */
+/** Your preferences, shared by every review (nit's settings screen; kept in nit's database). */
+export type Prefs = {
+  /** Code size in the diff and files, px. */
+  fontSize: number;
+  /** Long lines wrap instead of scrolling sideways. */
+  wrap: boolean;
+  /** How changed lines are marked in the gutter. */
+  indicators: "bars" | "classic" | "none";
+  /** What changed inside a changed line is highlighted by word, by character, or not at all. */
+  inlineChanges: "word" | "char" | "none";
+  /** Claude's model for co-review, questions and apply; "default" is Claude Code's own choice. */
+  model: "default" | "opus" | "sonnet" | "haiku";
+  effort: "default" | "low" | "medium" | "high" | "xhigh" | "max";
+  /** Co-review may propose nitpicks (at most two). */
+  nits: boolean;
+};
+
+export const DEFAULT_PREFS: Prefs = {
+  fontSize: 12.5,
+  wrap: false,
+  indicators: "bars",
+  inlineChanges: "word",
+  model: "default",
+  effort: "default",
+  nits: true,
+};
+
+/** A command as configured: the value in your config file, and the one in effect here and where it's from. */
+export type CommandSetting = { yours: string | null; effective: { run: string; from: string } | null };
+export type CommandSettings = { file: string; editable: boolean; checkout: CommandSetting; editor: CommandSetting };
+
 /** Claude Code's sign-in, as the page sees it. */
 export type AuthStatus = {
   installed: boolean;

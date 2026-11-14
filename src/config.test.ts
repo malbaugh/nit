@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadCommands } from "./config";
+import { commandSettings, loadCommands, saveUserCommands } from "./config";
 
 // A bare "origin" whose default branch has the team's .nit.toml, a clone to review in, and a
 // private XDG_CONFIG_HOME for the user's own config.
@@ -89,4 +89,26 @@ test("a malformed or unknown entry is skipped, not fatal", async () => {
   const c = await loadCommands(bare);
   expect(c.checkout).toBeUndefined();
   expect(c.editor?.run).toBe("nvim");
+});
+
+test("the settings screen edits your config file; the team's command still wins here, and says so", async () => {
+  const file = join(dir, "xdg", "nit", "config.toml");
+  const before = await Bun.file(file).text();
+  try {
+    await saveUserCommands({ editor: 'cursor -g "{file}:{line}"', checkout: null });
+    const s = await commandSettings(work);
+    expect(s.editable).toBe(true);
+    expect(s.editor.yours).toBe('cursor -g "{file}:{line}"');
+    expect(s.editor.effective?.run).toBe('cursor -g "{file}:{line}"');
+    expect(s.checkout.yours).toBeNull();
+    expect(s.checkout.effective).toEqual({ run: "team-checkout", from: ".nit.toml on origin/main" });
+    // Round-trips through TOML intact.
+    expect((await loadCommands(work)).editor?.run).toBe('cursor -g "{file}:{line}"');
+
+    await Bun.write(file, `[commands]\neditor = "zed"\n[other]\nx = 1\n`);
+    expect((await commandSettings(work)).editable).toBe(false);
+    await expect(saveUserCommands({ editor: "vim" })).rejects.toThrow("edit it by hand");
+  } finally {
+    await Bun.write(file, before);
+  }
 });

@@ -1,12 +1,14 @@
 import type {
   AgentRun,
   AuthStatus,
+  CommandSettings,
   Draft,
   FileContents,
   GitHubState,
   Job,
   Location,
   PostResult,
+  Prefs,
   ReviewData,
   ReviewEvent,
   SearchResult,
@@ -59,6 +61,11 @@ export const api = {
     ),
   saveTheme: (theme: unknown) => call<{ ok: true }>("PUT", "/api/settings", { theme }),
   saveLayout: (layout: unknown) => call<{ ok: true }>("PUT", "/api/settings", { layout }),
+  savePrefs: (prefs: Partial<Prefs>) => call<Prefs>("PUT", "/api/settings/prefs", prefs),
+  commands: () => call<CommandSettings>("GET", "/api/settings/commands"),
+  saveCommands: (patch: Partial<Record<"checkout" | "editor", string | null>>) =>
+    call<CommandSettings>("PUT", "/api/settings/commands", patch),
+  openInEditor: (path: string, line: number) => call<{ ran: string }>("POST", "/api/open-in-editor", { path, line }),
   review: () => call<ReviewData>("GET", "/api/review"),
   file: (path: string, prev?: string) =>
     call<FileContents>("GET", `/api/file?${new URLSearchParams({ path, prev: prev ?? "" })}`),

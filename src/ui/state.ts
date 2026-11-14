@@ -1,15 +1,17 @@
 import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pierre/diffs";
 import { useSyncExternalStore } from "react";
-import type {
-  AgentRun,
-  Draft,
-  FileContents,
-  GitHubState,
-  Job,
-  Location,
-  ReviewData,
-  Side,
-  Symbol as Sym,
+import {
+  type AgentRun,
+  DEFAULT_PREFS,
+  type Draft,
+  type FileContents,
+  type GitHubState,
+  type Job,
+  type Location,
+  type Prefs,
+  type ReviewData,
+  type Side,
+  type Symbol as Sym,
 } from "../types";
 import { api } from "./api";
 import { type Row, rows, treeOrder } from "./lines";
@@ -81,6 +83,8 @@ export type State = {
   marking: boolean;
   /** Claude needs signing in; `retry` reruns what failed once it is. */
   signIn: { retry: (() => void) | null } | null;
+  /** Your preferences (the settings screen), saved for every review. */
+  prefs: Prefs;
   browse: Browse | null;
   /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
   agent: AgentRun | null;
@@ -136,6 +140,7 @@ let state: State = {
   search: { query: "", regex: false, caseSensitive: false },
   marking: false,
   signIn: null,
+  prefs: { ...DEFAULT_PREFS, ...(globalThis as { nitPrefs?: Partial<Prefs> | null }).nitPrefs },
   browse: null,
   agent: null,
   agentActivity: [],
@@ -411,6 +416,17 @@ export function toast(message: string, undo?: () => void) {
 /** Something went wrong: shown longer, with a warning mark, and wrapped instead of cut off. */
 export function fail(message: string) {
   toasts.add({ title: message, timeout: 8000, data: { error: true } });
+}
+
+let savePrefs: ReturnType<typeof setTimeout> | undefined;
+/** Changes preferences at once and saves them shortly after (a slider sends one save, not twenty). */
+export function setPrefs(patch: Partial<Prefs>) {
+  set((s) => ({ prefs: { ...s.prefs, ...patch } }));
+  clearTimeout(savePrefs);
+  savePrefs = setTimeout(
+    () => api.savePrefs(state.prefs).catch(() => fail("Couldn't save your settings. Is nit still running?")),
+    300,
+  );
 }
 
 export function notify(message: string, action?: { label: string; run: () => void }) {

@@ -9,6 +9,7 @@ import {
 import type { FINDINGS_SCHEMA } from "./coreview";
 import { within } from "./git";
 import type { Guidelines } from "./guidelines";
+import { claudeOptions, prefsOf } from "./prefs";
 import type { Snapshots } from "./snapshot";
 import type { Store } from "./store";
 import { type AgentEvent, type AgentOutcome, type AgentRun, type Draft, type Job, SIGN_IN_ERROR } from "./types";
@@ -215,6 +216,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
             allowedTools: [...TOOLS, ...context.tools.map((t) => `mcp__nit__${t.name}`)],
             mcpServers: { nit: createSdkMcpServer({ name: "nit", tools: context.tools }) },
             settingSources: [],
+            ...claudeOptions(prefsOf(store)),
             systemPrompt: { type: "preset", preset: "claude_code", append: INSTRUCTIONS },
             hooks: { PreToolUse: [{ hooks: [confine] }] },
             outputFormat: OUTCOMES,
@@ -314,6 +316,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
               allowedTools: [...READ_TOOLS, ...names],
               mcpServers: { nit: server },
               settingSources: [],
+              ...claudeOptions(prefsOf(store)),
               systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
               hooks: { PreToolUse: [{ hooks: [confineReview] }] },
               includePartialMessages: kind === "ask",

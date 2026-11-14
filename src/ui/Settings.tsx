@@ -1,11 +1,23 @@
-import { Popover } from "@base-ui/react/popover";
+import { Dialog } from "@base-ui/react/dialog";
 import { Select } from "@base-ui/react/select";
 import type { ColorMode, ColorScheme } from "@pierre/theming";
-import { Check, NavArrowDown, Settings as SettingsIcon } from "iconoir-react/regular";
-import type { ReactNode } from "react";
+import {
+  Check,
+  Code,
+  ColorFilter,
+  GitCompare,
+  NavArrowDown,
+  Settings as SettingsIcon,
+  Sparks,
+  Xmark,
+} from "iconoir-react/regular";
+import { type ReactNode, useEffect, useState } from "react";
+import type { AuthStatus, CommandSetting, CommandSettings, Prefs } from "../types";
+import { api } from "./api";
+import { needSignIn } from "./SignIn";
 import * as st from "./state";
 import { catalog, nameFor, theme, useTheme } from "./theme";
-import { IconButton, Kbd, TextSegmented } from "./ui";
+import { Button, IconButton, Kbd, TextSegmented } from "./ui";
 
 // Shiki's themes have ids only (night-owl, github-dark-dimmed); show them as names.
 const WORDS: Record<string, string> = { github: "GitHub", vs: "VS", vscode: "VS Code", gruvbox: "Gruvbox", hc: "HC" };
@@ -14,11 +26,7 @@ const pretty = (id: string) =>
     .split("-")
     .map((w) => WORDS[w] ?? w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
-const label = (name: string) => {
-  const t = catalog.getThemes().find((d) => d.name === name);
-  return t?.displayName ?? pretty(name);
-};
-const options = (scheme: ColorScheme) =>
+const themeOptions = (scheme: ColorScheme) =>
   catalog.getThemes({ colorScheme: scheme }).map((t) => ({ value: t.name, label: t.displayName ?? pretty(t.name) }));
 
 const MODES: { value: ColorMode; label: string }[] = [
@@ -27,26 +35,28 @@ const MODES: { value: ColorMode; label: string }[] = [
   { value: "dark", label: "Dark" },
 ];
 
-function Row({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="flex h-9 items-center gap-3">
-      <span className="w-[76px] shrink-0 text-[12.5px] text-ink-2">{title}</span>
-      <div className="min-w-0 flex-1">{children}</div>
-    </div>
-  );
-}
+// ---------- controls
 
-function ThemeSelect({ scheme }: { scheme: ColorScheme }) {
-  const s = useTheme();
-  const value = nameFor(s, scheme);
-  const items = options(scheme);
+/** A dropdown in nit's look. */
+function Choice<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  const shown = options.find((o) => o.value === value)?.label ?? value;
   return (
-    <Select.Root items={items} value={value} onValueChange={(v) => v && theme.setThemeNameForScheme(scheme, v)}>
+    <Select.Root items={options} value={value} onValueChange={(v) => v && onChange(v as T)}>
       <Select.Trigger
-        aria-label={`${scheme === "dark" ? "Dark" : "Light"} theme`}
-        className="flex h-7 w-full min-w-0 items-center gap-2 rounded-control bg-field px-2.5 text-left text-[12.5px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-[box-shadow] duration-100 focus-visible:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)] data-popup-open:shadow-[inset_0_0_0_1px_var(--line-strong)]"
+        aria-label={label}
+        className="flex h-7 w-[200px] min-w-0 items-center gap-2 rounded-control bg-field px-2.5 text-left text-[12.5px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none transition-[box-shadow] duration-100 focus-visible:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)] data-popup-open:shadow-[inset_0_0_0_1px_var(--line-strong)]"
       >
-        <Select.Value className="min-w-0 flex-1 truncate">{() => label(value)}</Select.Value>
+        <Select.Value className="min-w-0 flex-1 truncate">{() => shown}</Select.Value>
         <Select.Icon className="shrink-0 text-ink-3">
           <NavArrowDown width={13} height={13} />
         </Select.Icon>
@@ -55,13 +65,13 @@ function ThemeSelect({ scheme }: { scheme: ColorScheme }) {
         <Select.Positioner sideOffset={4} className="z-[60] outline-none" alignItemWithTrigger={false}>
           <Select.Popup className="max-h-[min(360px,var(--available-height))] min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-card bg-surface p-1 shadow-overlay outline-none transition-[opacity,scale] duration-150 ease-out-strong data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             <Select.List>
-              {items.map((t) => (
+              {options.map((o) => (
                 <Select.Item
-                  key={t.value}
-                  value={t.value}
+                  key={o.value}
+                  value={o.value}
                   className="flex h-7 cursor-default items-center gap-2 rounded-[6px] pr-2 pl-2.5 text-[12.5px] text-ink-2 outline-none select-none data-highlighted:bg-hover-2 data-highlighted:text-ink data-selected:text-ink"
                 >
-                  <Select.ItemText className="min-w-0 flex-1 truncate">{t.label}</Select.ItemText>
+                  <Select.ItemText className="min-w-0 flex-1 truncate">{o.label}</Select.ItemText>
                   <Select.ItemIndicator className="shrink-0 text-accent-ink">
                     <Check width={13} height={13} />
                   </Select.ItemIndicator>
@@ -75,40 +85,392 @@ function ThemeSelect({ scheme }: { scheme: ColorScheme }) {
   );
 }
 
-/** Theme and appearance, from the gear in the sidebar footer or ⌘,. */
-export function SettingsButton() {
-  const open = st.useStore((s) => s.settingsOpen);
-  const { mode } = useTheme();
+function Switch({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
   return (
-    <Popover.Root open={open} onOpenChange={(o) => st.set({ settingsOpen: o })}>
-      <Popover.Trigger
-        render={
-          <IconButton label="Theme and appearance" keys="Mod+," side="top">
-            <SettingsIcon />
-          </IconButton>
-        }
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+      className={`relative h-[18px] w-[30px] shrink-0 rounded-full outline-none transition-[background-color] duration-150 focus-visible:shadow-[0_0_0_3px_var(--accent-tint)] ${on ? "bg-accent" : "bg-line-strong"}`}
+    >
+      <span
+        className={`absolute top-[2px] left-[2px] size-[14px] rounded-full bg-white shadow-[0_1px_2px_oklch(0_0_0/0.3)] transition-transform duration-150 ease-out-strong ${on ? "translate-x-[12px]" : ""}`}
       />
-      <Popover.Portal>
-        <Popover.Positioner side="top" align="start" sideOffset={8} className="z-50">
-          <Popover.Popup className="w-[300px] origin-(--transform-origin) rounded-card bg-surface p-3 pt-2.5 shadow-overlay outline-none transition-[opacity,scale] duration-150 ease-out-strong data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
-            <div className="mb-1.5 flex h-6 items-center">
-              <Popover.Title className="text-[13px] font-medium text-ink">Appearance</Popover.Title>
-              <span className="ml-auto">
-                <Kbd k="Mod+," quiet />
+    </button>
+  );
+}
+
+function Stepper(o: { value: number; onChange: (v: number) => void; min: number; max: number; step: number }) {
+  const btn =
+    "flex size-6 items-center justify-center rounded-[6px] text-[14px] text-ink-2 disabled:opacity-40 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink";
+  return (
+    <div className="flex items-center gap-1 rounded-control bg-field p-0.5 shadow-[inset_0_0_0_1px_var(--line)]">
+      <button
+        type="button"
+        aria-label="Smaller"
+        className={btn}
+        disabled={o.value <= o.min}
+        onClick={() => o.onChange(Math.max(o.min, o.value - o.step))}
+      >
+        −
+      </button>
+      <span className="w-12 text-center font-mono text-[12px] text-ink tabular-nums">{o.value}px</span>
+      <button
+        type="button"
+        aria-label="Larger"
+        className={btn}
+        disabled={o.value >= o.max}
+        onClick={() => o.onChange(Math.min(o.max, o.value + o.step))}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+/** One setting: what it is and what it does on the left, its control on the right. */
+function Row({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-14 items-center gap-6 py-2.5 shadow-[0_1px_0_var(--line-soft)] last:shadow-none">
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] text-ink">{title}</div>
+        {hint ? <div className="mt-0.5 text-[12px] leading-[17px] text-ink-3">{hint}</div> : null}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+// ---------- sections
+
+function Appearance() {
+  const t = useTheme();
+  const size = st.useStore((s) => s.prefs.fontSize);
+  return (
+    <>
+      <Row title="Mode">
+        <TextSegmented label="Colour mode" value={t.mode} onChange={(m) => theme.setColorMode(m)} options={MODES} />
+      </Row>
+      <Row title="Light theme" hint="Code and diff colours when nit is light.">
+        <Choice
+          label="Light theme"
+          value={nameFor(t, "light")}
+          options={themeOptions("light")}
+          onChange={(v) => theme.setThemeNameForScheme("light", v)}
+        />
+      </Row>
+      <Row title="Dark theme" hint="Code and diff colours when nit is dark.">
+        <Choice
+          label="Dark theme"
+          value={nameFor(t, "dark")}
+          options={themeOptions("dark")}
+          onChange={(v) => theme.setThemeNameForScheme("dark", v)}
+        />
+      </Row>
+      <Row title="Code size" hint="Text size in the diff and in files.">
+        <Stepper value={size} min={11} max={16} step={0.5} onChange={(fontSize) => st.setPrefs({ fontSize })} />
+      </Row>
+    </>
+  );
+}
+
+function Diff() {
+  const style = st.useStore((s) => s.style);
+  const p = st.useStore((s) => s.prefs);
+  return (
+    <>
+      <Row title="Layout" hint="Side by side, or old and new lines together. s switches it.">
+        <TextSegmented
+          label="Diff layout"
+          value={style}
+          onChange={(v) => st.set({ style: v })}
+          options={[
+            { value: "split", label: "Split" },
+            { value: "unified", label: "Unified" },
+          ]}
+        />
+      </Row>
+      <Row title="Wrap long lines" hint="Off, long lines scroll sideways.">
+        <Switch label="Wrap long lines" on={p.wrap} onChange={(wrap) => st.setPrefs({ wrap })} />
+      </Row>
+      <Row title="Changed lines" hint="How the gutter marks added and removed lines.">
+        <TextSegmented<Prefs["indicators"]>
+          label="Changed line markers"
+          value={p.indicators}
+          onChange={(indicators) => st.setPrefs({ indicators })}
+          options={[
+            { value: "bars", label: "Bars" },
+            { value: "classic", label: "+ −" },
+            { value: "none", label: "None" },
+          ]}
+        />
+      </Row>
+      <Row title="Changes within a line" hint="Highlight what changed inside a changed line.">
+        <TextSegmented<Prefs["inlineChanges"]>
+          label="Changes within a line"
+          value={p.inlineChanges}
+          onChange={(inlineChanges) => st.setPrefs({ inlineChanges })}
+          options={[
+            { value: "word", label: "Words" },
+            { value: "char", label: "Characters" },
+            { value: "none", label: "Off" },
+          ]}
+        />
+      </Row>
+    </>
+  );
+}
+
+function Claude() {
+  const p = st.useStore((s) => s.prefs);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+  useEffect(() => {
+    void api.auth().then(setAuth, () => {});
+  }, []);
+  const account = !auth
+    ? "Checking…"
+    : !auth.installed
+      ? "Claude Code isn't installed."
+      : auth.loggedIn
+        ? `Signed in${auth.method === "claude.ai" ? " with your Claude subscription" : auth.method ? ` (${auth.method})` : ""}.`
+        : "Not signed in.";
+  return (
+    <>
+      <Row title="Account" hint={account}>
+        <Button tone="secondary" onClick={() => needSignIn(null)} disabled={!auth?.installed}>
+          {auth?.loggedIn ? "Sign in again" : "Sign in"}
+        </Button>
+      </Row>
+      <Row title="Model" hint="For co-review, questions and apply. Default is Claude Code's choice.">
+        <Choice<Prefs["model"]>
+          label="Model"
+          value={p.model}
+          onChange={(model) => st.setPrefs({ model })}
+          options={[
+            { value: "default", label: "Default" },
+            { value: "opus", label: "Opus" },
+            { value: "sonnet", label: "Sonnet" },
+            { value: "haiku", label: "Haiku" },
+          ]}
+        />
+      </Row>
+      <Row title="Effort" hint="More effort reads more and thinks longer: slower, and uses more of your plan.">
+        <Choice<Prefs["effort"]>
+          label="Effort"
+          value={p.effort}
+          onChange={(effort) => st.setPrefs({ effort })}
+          options={[
+            { value: "default", label: "Default" },
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+            { value: "xhigh", label: "Extra high" },
+            { value: "max", label: "Max" },
+          ]}
+        />
+      </Row>
+      <Row title="Nitpicks in co-review" hint="Off, co-review proposes only issues and suggestions that matter.">
+        <Switch label="Nitpicks in co-review" on={p.nits} onChange={(nits) => st.setPrefs({ nits })} />
+      </Row>
+    </>
+  );
+}
+
+/** A command, saved to your config file when you leave the field or press Enter. */
+function CommandField({
+  name,
+  setting,
+  placeholder,
+  editable,
+  onSaved,
+}: {
+  name: "checkout" | "editor";
+  setting: CommandSetting;
+  placeholder: string;
+  editable: boolean;
+  onSaved: (s: CommandSettings) => void;
+}) {
+  const [text, setText] = useState(setting.yours ?? "");
+  const [state, setState] = useState<{ saved?: boolean; error?: string }>({});
+  const save = async () => {
+    if (text.trim() === (setting.yours ?? "")) return;
+    try {
+      onSaved(await api.saveCommands({ [name]: text.trim() || null }));
+      setState({ saved: true });
+    } catch (e) {
+      setState({ error: e instanceof Error ? e.message : "Couldn't save." });
+    }
+  };
+  // A repo's file or an environment variable can win over yours here; say which.
+  const overridden = setting.effective && setting.effective.run !== (setting.yours ?? "") ? setting.effective : null;
+  return (
+    <div className="w-[300px]">
+      <input
+        value={text}
+        disabled={!editable}
+        onChange={(e) => {
+          setText(e.target.value);
+          setState({});
+        }}
+        onBlur={save}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoComplete="off"
+        aria-label={`${name} command`}
+        className="h-7 w-full rounded-control bg-field px-2.5 font-mono text-[12px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)] disabled:opacity-60"
+      />
+      <div className="mt-1 h-4 truncate text-[11.5px] text-ink-3">
+        {state.error ? (
+          <span className="text-red">{state.error}</span>
+        ) : state.saved ? (
+          <span className="text-green">Saved</span>
+        ) : overridden ? (
+          <span title={overridden.run}>
+            In this repo: <code className="font-mono">{overridden.run}</code> from {overridden.from}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Commands() {
+  const [s, setS] = useState<CommandSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void api.commands().then(setS, (e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+  if (error) return <p className="py-4 text-[12.5px] text-red">{error}</p>;
+  if (!s) return <p className="py-4 text-[12.5px] text-ink-3">Reading your config…</p>;
+  return (
+    <>
+      <p className="pb-2 text-[12px] leading-[17px] text-ink-3">
+        Saved to <code className="font-mono text-ink-2">{s.file}</code>, for every repo. A repo's{" "}
+        <code className="font-mono">.nit.toml</code> or your <code className="font-mono">.nit.local.toml</code> can
+        override them there.
+        {s.editable ? null : (
+          <span className="text-orange"> That file has more than [commands] in it, so edit it by hand.</span>
+        )}
+      </p>
+      <Row
+        title="Editor"
+        hint={
+          <>
+            Opens a file at a line (o). <code className="font-mono">{"{file}"}</code> and{" "}
+            <code className="font-mono">{"{line}"}</code> are filled in. Empty uses VS Code, else your OS.
+          </>
+        }
+      >
+        <CommandField
+          name="editor"
+          setting={s.editor}
+          placeholder="zed {file}:{line}"
+          editable={s.editable}
+          onSaved={setS}
+        />
+      </Row>
+      <Row
+        title="Checkout"
+        hint={
+          <>
+            Checks out a pull request you review by URL: gets <code className="font-mono">$NIT_PR</code> and{" "}
+            <code className="font-mono">$NIT_BRANCH</code>, prints the directory. Empty uses a git worktree.
+          </>
+        }
+      >
+        <CommandField
+          name="checkout"
+          setting={s.checkout}
+          placeholder="crbn checkout $NIT_PR"
+          editable={s.editable}
+          onSaved={setS}
+        />
+      </Row>
+    </>
+  );
+}
+
+// ---------- the screen
+
+const SECTIONS = [
+  { id: "appearance", label: "Appearance", icon: <ColorFilter />, body: Appearance },
+  { id: "diff", label: "Diff", icon: <GitCompare />, body: Diff },
+  { id: "claude", label: "Claude", icon: <Sparks />, body: Claude },
+  { id: "commands", label: "Commands", icon: <Code />, body: Commands },
+] as const;
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+/** The gear in the sidebar footer; ⌘, works from anywhere. */
+export function SettingsButton() {
+  return (
+    <IconButton label="Settings" keys="Mod+," side="top" onClick={() => st.set({ settingsOpen: true })}>
+      <SettingsIcon />
+    </IconButton>
+  );
+}
+
+let lastSection: SectionId = "appearance";
+
+/** Settings: every change applies at once and is saved for every review. */
+export function SettingsDialog() {
+  const open = st.useStore((s) => s.settingsOpen);
+  const [section, setSection] = useState<SectionId>(lastSection);
+  lastSection = section;
+  const current = SECTIONS.find((x) => x.id === section) ?? SECTIONS[0];
+  const Body = current.body;
+  return (
+    <Dialog.Root open={open} onOpenChange={(o) => st.set({ settingsOpen: o })}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-[oklch(0_0_0/0.28)] transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0" />
+        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 flex h-[min(540px,calc(100vh-48px))] w-[min(780px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-window bg-surface shadow-overlay outline-none transition-[opacity,scale] duration-150 ease-out-strong data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+          <nav
+            aria-label="Settings sections"
+            className="flex w-[184px] shrink-0 flex-col gap-0.5 bg-inset p-2 shadow-[1px_0_0_var(--line)]"
+          >
+            <Dialog.Title className="flex h-9 items-center px-2 text-[13px] font-medium text-ink">
+              Settings
+            </Dialog.Title>
+            {SECTIONS.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                aria-current={x.id === section ? "page" : undefined}
+                onClick={() => setSection(x.id)}
+                className={`flex h-7 items-center gap-2 rounded-control px-2 text-left text-[12.5px] transition-[background-color,color] duration-100 [&_svg]:size-[14px] ${
+                  x.id === section
+                    ? "bg-hover-2 text-ink"
+                    : "text-ink-2 [@media(hover:hover)]:hover:bg-hover [@media(hover:hover)]:hover:text-ink"
+                }`}
+              >
+                {x.icon}
+                {x.label}
+              </button>
+            ))}
+            <span className="mt-auto px-2 pb-1 text-[11.5px] leading-4 text-ink-3">Changes save as you make them.</span>
+          </nav>
+          <section className="flex min-w-0 flex-1 flex-col">
+            <header className="flex h-12 shrink-0 items-center gap-2 px-6">
+              <h2 className="text-[14px] font-semibold text-ink">{current.label}</h2>
+              <span className="ml-auto flex items-center gap-1">
+                <Kbd k="Esc" quiet />
+                <Dialog.Close
+                  render={
+                    <IconButton label="Close" keys="Esc">
+                      <Xmark />
+                    </IconButton>
+                  }
+                />
               </span>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+              <Body />
             </div>
-            <Row title="Mode">
-              <TextSegmented label="Colour mode" value={mode} onChange={(m) => theme.setColorMode(m)} options={MODES} />
-            </Row>
-            <Row title="Light theme">
-              <ThemeSelect scheme="light" />
-            </Row>
-            <Row title="Dark theme">
-              <ThemeSelect scheme="dark" />
-            </Row>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+          </section>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

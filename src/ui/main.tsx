@@ -18,6 +18,7 @@ import { Palette } from "./Palette";
 import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
 import { SearchPane } from "./Search";
+import { SettingsDialog } from "./Settings";
 import { SignInDialog } from "./SignIn";
 import * as st from "./state";
 import { createEditor } from "./suggest";
@@ -127,9 +128,15 @@ function App() {
       <AgentPanel />
       <ReviewSheet />
       <SignInDialog />
+      <SettingsDialog />
     </div>
   );
 }
+
+// The settings screen's code size, for Pierre's shadow roots (style.css reads --code-size).
+const codeSize = () => document.documentElement.style.setProperty("--code-size", `${st.get().prefs.fontSize}px`);
+codeSize();
+st.subscribeToStore(codeSize);
 
 createRoot(document.getElementById("root")!).render(
   <IconoirProvider iconProps={ICONS}>

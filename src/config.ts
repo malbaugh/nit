@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import * as term from "./term";
+import type { CommandSetting, CommandSettings } from "./types";
 
 /** The plug points a config can set: shell commands nit runs instead of its built-ins. */
 export const COMMANDS = ["checkout", "editor"] as const;
@@ -75,4 +76,60 @@ export async function loadCommands(root: string): Promise<Commands> {
   layers.push(env);
 
   return Object.assign({}, ...layers);
+}
+
+/** What the settings screen shows for each command: yours (the user file) and the one in effect here. */
+export async function commandSettings(root: string): Promise<CommandSettings> {
+  const file = userConfigPath();
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = text ? (Bun.TOML.parse(text) as Record<string, unknown>) : {};
+  } catch {}
+  const yours = (parsed.commands ?? {}) as Record<string, unknown>;
+  const effective = await loadCommands(root);
+  const one = (name: Command): CommandSetting => ({
+    yours: typeof yours[name] === "string" ? (yours[name] as string) : null,
+    effective: effective[name] ?? null,
+  });
+  // nit writes the file whole, so it only edits one that holds nothing but [commands].
+  const editable = Object.keys(parsed).every((k) => k === "commands");
+  return { file: term.tilde(file), editable, checkout: one("checkout"), editor: one("editor") };
+}
+
+/** Sets (or, with null or "", removes) commands in your config file. */
+export async function saveUserCommands(patch: Partial<Record<Command, string | null>>) {
+  const file = userConfigPath();
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  const parsed = (text ? Bun.TOML.parse(text) : {}) as Record<string, unknown>;
+  if (Object.keys(parsed).some((k) => k !== "commands"))
+    throw new Error(`${term.tilde(file)} has more than [commands] in it; edit it by hand.`);
+  const commands = { ...((parsed.commands ?? {}) as Record<string, string>) };
+  for (const [name, run] of Object.entries(patch)) {
+    if (!COMMANDS.includes(name as Command)) throw new Error(`unknown command "${name}"`);
+    if (run?.trim()) commands[name] = run.trim();
+    else delete commands[name];
+  }
+  // JSON strings are valid TOML basic strings.
+  const lines = Object.entries(commands).map(([k, v]) => `${k} = ${JSON.stringify(v)}`);
+  await Bun.write(
+    file,
+    `# nit: written by its settings screen (⌘,).\n${lines.length ? `[commands]\n${lines.join("\n")}\n` : ""}`,
+  );
+}
+
+/** Opens a file at a line in your editor: the editor command, else VS Code, else the OS's default app. */
+export async function openInEditor(root: string, file: string, line: number) {
+  const configured = (await loadCommands(root)).editor?.run;
+  const quoted = `'${file.replaceAll("'", "'\\''")}'`;
+  const run =
+    configured ??
+    (Bun.which("code") ? "code --goto {file}:{line}" : `${process.platform === "darwin" ? "open" : "xdg-open"} {file}`);
+  const cmd = run.replaceAll("{file}", quoted).replaceAll("{line}", String(line));
+  const proc = Bun.spawn(["sh", "-c", cmd], { cwd: root, stdout: "ignore", stderr: "pipe" });
+  // An editor that stays open (a -w flag) counts as opened after a moment.
+  const code = await Promise.race([proc.exited, Bun.sleep(3000).then(() => 0)]);
+  if (code !== 0)
+    throw new Error(`${run} failed: ${(await new Response(proc.stderr).text()).trim() || `exit ${code}`}`);
+  return run;
 }

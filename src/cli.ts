@@ -7,6 +7,7 @@ import { createAgent } from "./agent";
 import { createAuth } from "./auth";
 import { buildUI, isStale, uiDirFor } from "./build";
 import { checkoutPr, parsePrArg } from "./checkout";
+import { commandSettings, openInEditor, saveUserCommands } from "./config";
 import {
   ASK_INSTRUCTIONS,
   askPrompt,
@@ -21,6 +22,7 @@ import * as git from "./git";
 import { createGitHub } from "./github";
 import { changedPaths, type Guidelines, guidelinesBlock, guidelineText, loadGuidelines } from "./guidelines";
 import { createNavigator } from "./navigate";
+import { PrefsPatch, prefsOf } from "./prefs";
 import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
 import * as term from "./term";
@@ -409,6 +411,7 @@ const serve = (p: number) =>
                 title: gh.status === "ready" ? gh.pr.title : null,
                 guidelines,
                 maxInline: 120_000,
+                nits: prefsOf(store).nits,
               }),
               instructions: REVIEW_INSTRUCTIONS,
               guidelines,
@@ -421,6 +424,7 @@ const serve = (p: number) =>
                   guidelines,
                   existing: store.drafts(),
                   files: (await $`git ls-files`.cwd(root).quiet().text()).split("\n"),
+                  maxNits: prefsOf(store).nits ? 2 : 0,
                   text: (side, path) =>
                     side === "additions" ? git.readWorking(root, path) : git.readAtRef(root, mergeBase, path),
                 });
@@ -534,6 +538,46 @@ const serve = (p: number) =>
           });
         }),
       },
+      "/api/settings/prefs": {
+        PUT: guarded(async (req) => {
+          const patch = PrefsPatch.safeParse(await req.json().catch(() => null));
+          if (!patch.success) return fail(400, "invalid preferences");
+          const prefs = { ...prefsOf(store), ...patch.data };
+          store.setSetting("prefs", prefs);
+          return json(prefs);
+        }),
+      },
+      "/api/settings/commands": {
+        GET: guarded(async () => json(await commandSettings(root))),
+        PUT: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+          const patch: Partial<Record<"checkout" | "editor", string | null>> = {};
+          for (const k of ["checkout", "editor"] as const)
+            if (body && k in body) {
+              const v = body[k];
+              if (v !== null && (typeof v !== "string" || v.length > 2000)) return fail(400, `invalid ${k}`);
+              patch[k] = v;
+            }
+          try {
+            await saveUserCommands(patch);
+            return json(await commandSettings(root));
+          } catch (e) {
+            return fail(400, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/open-in-editor": {
+        POST: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as { path?: unknown; line?: unknown } | null;
+          if (typeof body?.path !== "string" || !validPath(body.path)) return fail(400, "invalid path");
+          const line = Number.isInteger(body.line) && (body.line as number) > 0 ? (body.line as number) : 1;
+          try {
+            return json({ ran: await openInEditor(root, git.safePath(root, body.path), line) });
+          } catch (e) {
+            return fail(500, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
       "/api/settings": {
         PUT: guarded(async (req) => {
           // User settings shared by every review: the theme and the panel layout.
@@ -565,7 +609,7 @@ const serve = (p: number) =>
         // The saved theme goes in before first paint, so the page never flashes the default.
         const html = await Bun.file(join(uiDir, "index.html")).text();
         const inline = (v: unknown) => JSON.stringify(v).replaceAll("<", "\\u003c");
-        const settings = `window.nitTheme=${inline(store.setting("theme"))};window.nitLayout=${inline(store.setting("layout"))};`;
+        const settings = `window.nitTheme=${inline(store.setting("theme"))};window.nitLayout=${inline(store.setting("layout"))};window.nitPrefs=${inline(prefsOf(store))};`;
         return new Response(html.replace("</head>", `<script>${settings}${themeBoot}</script></head>`), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });

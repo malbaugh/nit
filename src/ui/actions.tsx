@@ -13,6 +13,7 @@ import {
   List,
   NavArrowDown,
   NavArrowUp,
+  OpenNewWindow,
   Page,
   Refresh,
   Search,
@@ -385,6 +386,14 @@ export const actions: Action[] = [
     run: () => st.set({ palette: "symbols" }),
   },
   { id: "back", group: "Navigate", label: "Go back", keys: ["Mod+["], icon: <ArrowLeft />, run: nav.goBack },
+  {
+    id: "open-in-editor",
+    group: "Navigate",
+    label: "Open in editor",
+    keys: ["o"],
+    icon: <OpenNewWindow />,
+    run: () => void nav.openInEditor(),
+  },
 ];
 
 const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);

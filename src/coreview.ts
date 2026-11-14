@@ -173,6 +173,8 @@ export async function proposals(
     existing: Draft[];
     /** Every tracked path, to turn a bare file name in evidence into its repo path. */
     files?: string[];
+    /** Nitpicks allowed (settings: off is 0). */
+    maxNits?: number;
   },
 ): Promise<{ drafts: Draft[]; dropped: { reason: string; body: string }[] }> {
   const byName = new Map<string, string[]>();
@@ -266,14 +268,16 @@ export async function proposals(
     });
   }
 
-  // Caps after the checks: important first, at most 5 in all and 2 nits.
+  // Caps after the checks: important first, at most 5 in all and 2 nits (none when they're off).
+  const maxNits = ctx.maxNits ?? 2;
   drafts.sort((a, b) => Number(b.proposal?.severity === "important") - Number(a.proposal?.severity === "important"));
   const kept: Draft[] = [];
   let nits = 0;
   for (const d of drafts) {
     const nit = d.proposal?.severity === "nit";
-    if (kept.length >= 5 || (nit && nits >= 2)) {
-      dropped.push({ reason: "over the limit of 5 (2 nits)", body: `${d.path}:${d.end} ${d.body}` });
+    if (kept.length >= 5 || (nit && nits >= maxNits)) {
+      const reason = nit && !maxNits ? "nitpicks are off in settings" : `over the limit of 5 (${maxNits} nits)`;
+      dropped.push({ reason, body: `${d.path}:${d.end} ${d.body}` });
       continue;
     }
     if (nit) nits++;
@@ -283,7 +287,13 @@ export async function proposals(
 }
 
 /** The co-review prompt: the change, its files, and the project's guidelines. */
-export function reviewPrompt(o: { patch: string; title: string | null; guidelines: Guidelines; maxInline: number }) {
+export function reviewPrompt(o: {
+  patch: string;
+  title: string | null;
+  guidelines: Guidelines;
+  maxInline: number;
+  nits?: boolean;
+}) {
   const files = [...hunkRanges(o.patch).keys()];
   const inline = o.patch.length <= o.maxInline;
   const diff = inline
@@ -294,6 +304,7 @@ export function reviewPrompt(o: { patch: string; title: string | null; guideline
     `Review this change (${files.length} ${files.length === 1 ? "file" : "files"}).`,
     diff,
     guidelinesBlock(o.guidelines),
+    o.nits === false ? "Nitpicks are off: report only issues and suggestions that matter." : "",
   ]
     .filter(Boolean)
     .join("\n\n");
