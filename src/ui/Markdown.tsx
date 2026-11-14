@@ -69,6 +69,11 @@ export const Markdown = memo(function Markdown({
 
   const components: Components = {
     ...plain,
+    // Streamdown wraps images in a block with a download button; GitHub draws them inline (bots
+    // put 16px icons in headings and summaries), and so does nit.
+    img: ({ src, alt, width, height }) => (
+      <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} width={width} height={height} />
+    ),
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noreferrer noopener">
         {children}
