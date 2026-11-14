@@ -79,6 +79,8 @@ export type State = {
   search: { query: string; regex: boolean; caseSensitive: boolean };
   /** The search text stays marked in the code you open from it, until Esc. */
   marking: boolean;
+  /** Claude needs signing in; `retry` reruns what failed once it is. */
+  signIn: { retry: (() => void) | null } | null;
   browse: Browse | null;
   /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
   agent: AgentRun | null;
@@ -133,6 +135,7 @@ let state: State = {
   searchOpen: false,
   search: { query: "", regex: false, caseSensitive: false },
   marking: false,
+  signIn: null,
   browse: null,
   agent: null,
   agentActivity: [],

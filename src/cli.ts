@@ -4,6 +4,7 @@ import { type createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { $ } from "bun";
 import { z } from "zod";
 import { createAgent } from "./agent";
+import { createAuth } from "./auth";
 import { buildUI, isStale, uiDirFor } from "./build";
 import { checkoutPr, parsePrArg } from "./checkout";
 import {
@@ -58,6 +59,7 @@ function patch() {
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
 const agent = createAgent(root, createSnapshots(root, project), store);
+const auth = createAuth();
 
 /** nit's own tools for Claude: guidelines from the base branch, and one file's diff. */
 function claudeTools(
@@ -331,6 +333,29 @@ const serve = (p: number) =>
       },
       "/api/agent": {
         GET: guarded(async () => json({ run: agent.state() })),
+      },
+      "/api/auth": {
+        GET: guarded(async () => json(await auth.status())),
+      },
+      "/api/auth/login": {
+        POST: guarded(async () => {
+          try {
+            return json(await auth.start());
+          } catch (e) {
+            return fail(500, e instanceof Error ? e.message : String(e));
+          }
+        }),
+        DELETE: guarded(async () => {
+          auth.cancel();
+          return json({ ok: true });
+        }),
+      },
+      "/api/auth/code": {
+        POST: guarded(async (req) => {
+          const body = (await req.json().catch(() => ({}))) as { code?: unknown };
+          if (typeof body.code !== "string" || !body.code.trim()) return fail(400, "invalid body");
+          return auth.code(body.code) ? json({ ok: true }) : fail(409, "No sign-in is waiting for a code.");
+        }),
       },
       "/api/agent/apply": {
         POST: guarded(async (req) => {

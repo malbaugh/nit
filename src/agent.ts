@@ -11,7 +11,7 @@ import { within } from "./git";
 import type { Guidelines } from "./guidelines";
 import type { Snapshots } from "./snapshot";
 import type { Store } from "./store";
-import type { AgentEvent, AgentOutcome, AgentRun, Draft, Job } from "./types";
+import { type AgentEvent, type AgentOutcome, type AgentRun, type Draft, type Job, SIGN_IN_ERROR } from "./types";
 
 /**
  * Applies review comments with the Claude Agent SDK, on the Claude Code login already on this
@@ -25,8 +25,7 @@ const READ_TOOLS = ["Read", "Glob", "Grep"];
 
 // What to do about the errors a reviewer can fix; the rest keep Claude Code's own words.
 const WHY: Partial<Record<SDKAssistantMessageError, string>> = {
-  authentication_failed:
-    "Claude isn't signed in, or its login expired. In a terminal, run claude and sign in with /login, then try again.",
+  authentication_failed: SIGN_IN_ERROR,
   rate_limit: "You've reached your Claude usage limit. Try again when it resets.",
   overloaded: "Claude is overloaded right now. Try again in a minute.",
   billing_error: "Your Claude account has a billing problem. Check it at claude.ai, then try again.",

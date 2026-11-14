@@ -18,6 +18,7 @@ import { Palette } from "./Palette";
 import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
 import { SearchPane } from "./Search";
+import { SignInDialog } from "./SignIn";
 import * as st from "./state";
 import { createEditor } from "./suggest";
 import { theme } from "./theme";
@@ -125,6 +126,7 @@ function App() {
       <Palette />
       <AgentPanel />
       <ReviewSheet />
+      <SignInDialog />
     </div>
   );
 }

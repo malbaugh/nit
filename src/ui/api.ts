@@ -1,5 +1,6 @@
 import type {
   AgentRun,
+  AuthStatus,
   Draft,
   FileContents,
   GitHubState,
@@ -40,6 +41,10 @@ export const api = {
   ask: (b: { path: string; side: Side; start: number; end: number; question: string; followUp?: string | null }) =>
     call<{ job: Job }>("POST", "/api/ask", b),
   job: () => call<{ job: Job | null }>("GET", "/api/agent/job"),
+  auth: () => call<AuthStatus>("GET", "/api/auth"),
+  signIn: () => call<{ url: string | null }>("POST", "/api/auth/login", {}),
+  cancelSignIn: () => call<{ ok: true }>("DELETE", "/api/auth/login"),
+  signInCode: (code: string) => call<{ ok: true }>("POST", "/api/auth/code", { code }),
   stopAgent: () => call<{ ok: true }>("POST", "/api/agent/stop", {}),
   undoAgent: () => call<{ restored: string[]; kept: string[] }>("POST", "/api/agent/undo", {}),
   agentChanges: async () => {

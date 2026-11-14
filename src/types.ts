@@ -158,6 +158,20 @@ export type AgentRun = {
 };
 
 /** A read-only Claude job: a co-review of the diff, or a question about lines. */
+/** Claude Code's sign-in, as the page sees it. */
+export type AuthStatus = {
+  installed: boolean;
+  loggedIn: boolean;
+  method: string | null;
+  /** A sign-in nit started is waiting for the browser. */
+  signingIn: boolean;
+  url: string | null;
+  error: string | null;
+};
+
+/** A run or job that failed because Claude needs signing in again carries exactly this error. */
+export const SIGN_IN_ERROR = "Claude isn't signed in, or its sign-in expired.";
+
 export type Job = {
   id: string;
   kind: "review" | "ask";

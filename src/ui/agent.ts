@@ -1,5 +1,6 @@
-import type { AgentEvent, AgentRun, Job } from "../types";
+import { type AgentEvent, type AgentRun, type Job, SIGN_IN_ERROR } from "../types";
 import { api } from "./api";
+import { needSignIn } from "./SignIn";
 import * as st from "./state";
 
 /**
@@ -18,6 +19,7 @@ function onRun(run: AgentRun) {
 
 async function finished(run: AgentRun) {
   await st.load(); // the agent's edits are in the review's diff now
+  if (run.error === SIGN_IN_ERROR) return needSignIn(() => apply(run.drafts));
   if (run.state === "failed") return st.fail(`Claude couldn't finish: ${run.error ?? "unknown error"}`);
   if (run.state === "stopped") return st.toast("Stopped. What Claude changed so far is kept; undo puts it back.");
   const done = run.outcomes.filter((o) => o.status === "done").length;
@@ -36,6 +38,7 @@ function onJob(job: Job) {
 }
 
 async function jobFinished(job: Job) {
+  if (job.error === SIGN_IN_ERROR) return needSignIn(job.kind === "review" ? coreview : () => ask(job.question ?? ""));
   // An open ask box shows its own error.
   if (job.state === "failed")
     return job.kind === "ask" && st.get().asking
