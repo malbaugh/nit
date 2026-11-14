@@ -6,6 +6,7 @@ import type {
   PostResult,
   ReviewData,
   ReviewEvent,
+  SearchResult,
   Side,
   Symbol as Sym,
 } from "../types";
@@ -31,6 +32,11 @@ const q = (params: Record<string, string | number | undefined>) =>
 export type At = { path: string; side: Side; line: number };
 
 export const api = {
+  search: (query: string, regex: boolean, caseSensitive: boolean, after?: string) =>
+    call<SearchResult>(
+      "GET",
+      `/api/search?${q({ q: query, regex: regex ? 1 : undefined, case: caseSensitive ? 1 : undefined, after })}`,
+    ),
   saveTheme: (theme: unknown) => call<{ ok: true }>("PUT", "/api/settings", { theme }),
   review: () => call<ReviewData>("GET", "/api/review"),
   file: (path: string, prev?: string) =>

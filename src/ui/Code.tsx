@@ -1,5 +1,5 @@
 import { getFiletypeFromFileName, getSharedHighlighter, type SupportedLanguages } from "@pierre/diffs";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useTheme } from "./theme";
 
 type Themes = { dark: string; light: string };
@@ -24,7 +24,18 @@ function highlight(source: string, lang: string, themes: Themes) {
 }
 
 /** A highlighted code block. With `startLine`, lines are numbered from it. */
-export function CodeBlock({ source, lang, startLine }: { source: string; lang: string; startLine?: number }) {
+export function CodeBlock({
+  source,
+  lang,
+  startLine,
+  mark,
+}: {
+  source: string;
+  lang: string;
+  startLine?: number;
+  /** A line number (counted from startLine) to highlight. */
+  mark?: number;
+}) {
   const [html, setHtml] = useState<string | null>(null);
   const { darkThemeName: dark, lightThemeName: light } = useTheme();
   useEffect(() => {
@@ -37,29 +48,44 @@ export function CodeBlock({ source, lang, startLine }: { source: string; lang: s
   }, [source, lang, dark, light]);
   const numbered = startLine !== undefined;
   const style = numbered ? ({ counterReset: `line ${startLine - 1}` } as React.CSSProperties) : undefined;
+  const cls = numbered ? "code-numbered" : undefined;
+  // nth-child can't take a variable, so the marked line gets a rule scoped to this block.
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const nth = mark !== undefined ? mark - (startLine ?? 1) + 1 : 0;
+  const markRule =
+    nth > 0 ? (
+      <style>{`[data-code="${id}"] .line:nth-child(${nth}){background:var(--accent-tint);box-shadow:inset 2px 0 0 var(--accent)}`}</style>
+    ) : null;
   // Shiki escapes the source, so its HTML is safe to insert.
   if (html)
     return (
-      <div
-        className={numbered ? "code-numbered" : undefined}
-        style={style}
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki output; the source is escaped
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <>
+        {markRule}
+        <div
+          className={cls}
+          style={style}
+          data-code={id}
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki output; the source is escaped
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      </>
     );
   return (
-    <div className={numbered ? "code-numbered" : undefined} style={style}>
-      <pre>
-        <code>
-          {source.split("\n").map((l, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines of one fixed block
-            <span key={i} className="line">
-              {l}
-              {"\n"}
-            </span>
-          ))}
-        </code>
-      </pre>
-    </div>
+    <>
+      {markRule}
+      <div className={cls} style={style} data-code={id}>
+        <pre>
+          <code>
+            {source.split("\n").map((l, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines of one fixed block
+              <span key={i} className="line">
+                {l}
+                {"\n"}
+              </span>
+            ))}
+          </code>
+        </pre>
+      </div>
+    </>
   );
 }

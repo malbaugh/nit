@@ -11,7 +11,7 @@ import { useTheme } from "./theme";
 import { basename, dirname, IconButton, Kbd } from "./ui";
 
 const texts = new Map<string, Promise<string | null>>();
-const textOf = (path: string) => {
+export const textOf = (path: string) => {
   let p = texts.get(path);
   if (!p) {
     p = api.file(path).then((c) => c.new);

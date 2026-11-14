@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
-import { FileFinder, type GrepMatch } from "@ff-labs/fff-bun";
+import { FileFinder, type GrepCursor, type GrepMatch } from "@ff-labs/fff-bun";
 import { parsePatchFiles } from "@pierre/diffs";
 import * as git from "./git";
 import { type ModuleShape, moduleShape, namespaceOf } from "./imports";
 import { identifierAt, identifiersOnLine, parse } from "./symbols";
-import type { Location, Side, Symbol as Sym } from "./types";
+import type { Location, SearchResult, Side, Symbol as Sym } from "./types";
 import { changedLines } from "./ui/lines";
 
 const SNIPPET_LINES = 15;
@@ -236,6 +236,49 @@ export async function createNavigator(root: string, mergeBase: string, patch: ()
   }
 
   return {
+    /**
+     * Repo-wide text search through fff's warm index, recently used files first. The query
+     * may start with fff's scopes (`*.ts`, `src/`). Lines are cut to 400 characters.
+     */
+    search(query: string, opts: { regex: boolean; caseSensitive: boolean; after?: string }): SearchResult {
+      // The page cursor travels as fff's own cursor object, serialized and handed back unchanged.
+      let cursor: GrepCursor | null = null;
+      try {
+        cursor = opts.after ? (JSON.parse(Buffer.from(opts.after, "base64url").toString()) as GrepCursor) : null;
+      } catch {
+        return { matches: [], truncated: false, next: null };
+      }
+      const r = finder.grep(query, {
+        cursor,
+        mode: opts.regex ? "regex" : "plain",
+        smartCase: !opts.caseSensitive,
+        pageSize: 200,
+        maxMatchesPerFile: 100,
+        timeBudgetMs: 1500,
+      });
+      if (!r.ok) return { matches: [], truncated: false, next: null };
+      const matches = r.value.items
+        .filter((m) => !m.isBinary)
+        .map((m) => {
+          const text = m.lineContent.slice(0, 400);
+          return {
+            path: m.relativePath,
+            line: m.lineNumber,
+            text,
+            ranges: m.matchRanges
+              .map(([a, b]) => [charCol(m.lineContent, a), charCol(m.lineContent, b)] as [number, number])
+              .filter(([a]) => a < text.length),
+          };
+        });
+      const { nextCursor } = r.value;
+      return {
+        matches,
+        truncated: nextCursor !== null,
+        next: nextCursor ? Buffer.from(JSON.stringify(nextCursor)).toString("base64url") : null,
+        ...(r.value.regexFallbackError ? { regexError: r.value.regexFallbackError } : {}),
+      };
+    },
+
     async symbols(path: string, prev: string | null) {
       const [now, before] = await Promise.all([parsed(path, "additions"), parsed(prev ?? path, "deletions")]);
       return { new: now?.parsed?.outline ?? null, old: before?.parsed?.outline ?? null };

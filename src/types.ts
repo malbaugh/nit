@@ -101,3 +101,14 @@ export type PostResult = {
   asFileComments: string[];
   failed: { id: string; error: string }[];
 };
+
+/** One line matching a repo-wide search. Columns and ranges count UTF-16 units. */
+export type SearchMatch = { path: string; line: number; text: string; ranges: [number, number][] };
+export type SearchResult = {
+  matches: SearchMatch[];
+  /** More files are left to search; pass `next` back for the next page. */
+  truncated: boolean;
+  next: string | null;
+  /** Set when a regex didn't compile and fff searched for the literal text instead. */
+  regexError?: string;
+};

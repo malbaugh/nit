@@ -24,17 +24,15 @@ function decoration({ item }: { item: { path: string; kind: string } }): FileTre
   const { add, del } = stats(file);
   const viewed = s.viewed.has(item.path);
   const drafts = s.drafts.filter((d) => d.path === item.path).length;
-  const dim = "var(--ink-3)";
+  // Viewed is the one thing to see at a glance: a solid check replaces the counts.
+  if (viewed) return { icon: { name: "nit-viewed", width: 14, height: 14 }, title: `Viewed · +${add} −${del}` };
   const parts = [
     ...(drafts ? [{ text: `${drafts}  `, color: "var(--orange)" }] : []),
-    ...(viewed ? [{ text: "✓ ", color: "var(--green)" }] : []),
-    ...(add ? [{ text: `+${add}`, color: viewed ? dim : "var(--green)" }] : []),
+    ...(add ? [{ text: `+${add}`, color: "var(--green)" }] : []),
     ...(add && del ? [{ text: " " }] : []),
-    ...(del ? [{ text: `−${del}`, color: viewed ? dim : "var(--red)" }] : []),
+    ...(del ? [{ text: `−${del}`, color: "var(--red)" }] : []),
   ];
-  const title = [drafts ? `${drafts} draft comments` : "", viewed ? "Viewed" : "", `+${add} −${del}`]
-    .filter(Boolean)
-    .join(" · ");
+  const title = [drafts ? `${drafts} draft comments` : "", `+${add} −${del}`].filter(Boolean).join(" · ");
   return { text: parts.map((p) => p.text).join(""), parts, title };
 }
 
@@ -64,6 +62,11 @@ const TREE_STYLE = {
   "--trees-scrollbar-thumb-override": "var(--line-strong)",
 } as React.CSSProperties;
 
+const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" style="position:absolute"><symbol id="nit-viewed" viewBox="0 0 16 16">
+<circle cx="8" cy="8" r="7" fill="var(--green)"/>
+<path d="M4.9 8.3l2 2 4.2-4.5" fill="none" stroke="var(--page)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</symbol></svg>`;
+
 // Counts never give way to a long name: the name truncates instead.
 const TREE_CSS = `
 [data-item-section="decoration"] { flex: 0 0 auto; overflow: visible; }
@@ -87,6 +90,7 @@ export function ChangedTree() {
     gitStatus: statusOf(st.get().files),
     renderRowDecoration: decoration,
     unsafeCSS: TREE_CSS,
+    icons: { set: "complete", colored: true, spriteSheet: SPRITE },
     onSelectionChange: (paths) => {
       const path = paths.at(-1);
       const s = st.get();

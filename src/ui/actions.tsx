@@ -6,6 +6,7 @@ import {
   ChatPlusIn,
   CheckCircle,
   CodeBracketsSquare,
+  DocMagnifyingGlass,
   EditPencil,
   Expand,
   List,
@@ -49,6 +50,7 @@ const BROWSE = new Set([
   "files",
   "sidebar",
   "settings",
+  "search",
   "review",
   "next-file",
   "prev-file",
@@ -140,6 +142,14 @@ export const actions: Action[] = [
     keys: ["Mod+Shift+Enter"],
     icon: <ChatLines />,
     run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
+  {
+    id: "search",
+    group: "Navigate",
+    label: "Search the repo",
+    keys: ["Mod+Shift+f"],
+    icon: <DocMagnifyingGlass />,
+    run: () => st.set({ searchOpen: true, palette: null }),
   },
   {
     id: "settings",
@@ -324,7 +334,9 @@ const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform)
 export function keyName(e: KeyboardEvent) {
   const parts = [];
   if (e.metaKey || e.ctrlKey) parts.push("Mod");
-  if (e.shiftKey && e.key.length > 1) parts.push("Shift");
+  // Shift is part of the name for named keys and with a modifier (⌘⇧F); a bare shifted
+  // letter is already its capital.
+  if (e.shiftKey && (e.key.length > 1 || e.metaKey || e.ctrlKey || e.altKey)) parts.push("Shift");
   if (e.altKey) parts.push("Alt");
   // Single characters keep their case ("C" is ⇧C) unless a modifier is held.
   parts.push(e.key.length === 1 && (e.metaKey || e.ctrlKey || e.altKey) ? e.key.toLowerCase() : e.key);
@@ -364,8 +376,14 @@ export function handleKey(e: KeyboardEvent) {
     st.set({ reviewOpen: !s.reviewOpen });
     return;
   }
+  // Search opens from anywhere but a composer, even from the palette.
+  if (name === "Mod+Shift+f" && !s.editing) {
+    e.preventDefault();
+    st.set({ searchOpen: !s.searchOpen, palette: null });
+    return;
+  }
   // The sheet traps focus and handles Esc itself.
-  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen) return;
+  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen) return;
   if (e.key === "Escape") {
     if (s.peek) nav.closePeek();
     else if (s.browse) nav.goBack();

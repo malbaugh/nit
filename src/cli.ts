@@ -230,6 +230,16 @@ const serve = (p: number) =>
           return json({ name, ...(await nav.references(name)) });
         }),
       },
+      "/api/search": {
+        GET: guarded(async (req) => {
+          const p = new URL(req.url).searchParams;
+          const q = p.get("q") ?? "";
+          if (!q.trim() || q.length > 500) return json({ matches: [], truncated: false, next: null });
+          const after = p.get("after") ?? undefined;
+          if (after && after.length > 200) return fail(400, "invalid cursor");
+          return json(nav.search(q, { regex: p.get("regex") === "1", caseSensitive: p.get("case") === "1", after }));
+        }),
+      },
       "/api/github": {
         GET: guarded(async (req) => json(await github.state(new URL(req.url).searchParams.has("fresh")))),
       },

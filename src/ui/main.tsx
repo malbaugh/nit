@@ -10,6 +10,7 @@ import { FilePane } from "./FilePane";
 import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
 import { ReviewSheet } from "./ReviewSheet";
+import { SearchWindow } from "./Search";
 import * as st from "./state";
 import { theme } from "./theme";
 import { toasts } from "./toasts";
@@ -99,6 +100,7 @@ function App() {
       {browsing ? <FilePane /> : <DiffPane />}
       {outlineOpen ? <OutlinePanel /> : null}
       <Palette />
+      <SearchWindow />
       <ReviewSheet />
     </div>
   );

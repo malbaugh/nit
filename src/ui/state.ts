@@ -54,6 +54,7 @@ type State = {
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
   settingsOpen: boolean;
+  searchOpen: boolean;
   browse: Browse | null;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
@@ -97,6 +98,7 @@ let state: State = {
   outlineOpen: stored("nit.outline") !== "0",
   reviewOpen: false,
   settingsOpen: false,
+  searchOpen: false,
   browse: null,
   github: null,
   fullFiles: new Set(),

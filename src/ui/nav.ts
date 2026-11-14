@@ -1,5 +1,5 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import type { Location, Side, Symbol as Sym } from "../types";
+import type { Side, Symbol as Sym } from "../types";
 import { api } from "./api";
 import { rows } from "./lines";
 import * as st from "./state";
@@ -141,7 +141,7 @@ async function goToLine(index: number, side: Side, line: number) {
 }
 
 /** Moves to a location: in the review's diff when the file is part of it, else read-only. */
-export function openLocation(loc: Location) {
+export function openLocation(loc: { path: string; line: number }) {
   const index = st.get().files.findIndex((f) => f.name === loc.path);
   if (index !== -1) return void goToLine(index, "additions", loc.line);
   remember();
