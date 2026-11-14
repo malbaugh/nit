@@ -76,6 +76,8 @@ export type State = {
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
   settingsOpen: boolean;
+  /** The settings section shown, kept between openings. */
+  settingsSection: "appearance" | "diff" | "claude" | "github" | "commands";
   /** The search screen replaces the diff; its query lives in the URL (?search=…). */
   searchOpen: boolean;
   search: { query: string; regex: boolean; caseSensitive: boolean };
@@ -136,6 +138,7 @@ let state: State = {
   outlineOpen: savedLayout.outlineOpen ?? stored("nit.outline") !== "0",
   reviewOpen: false,
   settingsOpen: false,
+  settingsSection: "appearance",
   searchOpen: false,
   search: { query: "", regex: false, caseSensitive: false },
   marking: false,

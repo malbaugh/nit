@@ -173,6 +173,8 @@ export type Prefs = {
   effort: "default" | "low" | "medium" | "high" | "xhigh" | "max";
   /** Co-review may propose nitpicks (at most two). */
   nits: boolean;
+  /** How Claude signs in: Claude Code's own login, or the API key saved in nit (your keychain). */
+  auth: "login" | "apiKey";
 };
 
 export const DEFAULT_PREFS: Prefs = {
@@ -183,7 +185,11 @@ export const DEFAULT_PREFS: Prefs = {
   model: "default",
   effort: "default",
   nits: true,
+  auth: "login",
 };
+
+/** Your GitHub login for this repo's host: the token saved in nit, else the GitHub CLI's. */
+export type GitHubAccount = { host: string; source: "nit" | "gh" | null; login: string | null; saved: boolean };
 
 /** A command as configured: the value in your config file, and the one in effect here and where it's from. */
 export type CommandSetting = { yours: string | null; effective: { run: string; from: string } | null };
@@ -194,14 +200,13 @@ export type AuthStatus = {
   installed: boolean;
   loggedIn: boolean;
   method: string | null;
-  /** A sign-in nit started is waiting for the browser. */
-  signingIn: boolean;
-  url: string | null;
-  error: string | null;
+  /** An API key is saved in nit (your keychain). The key itself never leaves the server. */
+  hasKey: boolean;
 };
 
 /** A run or job that failed because Claude needs signing in again carries exactly this error. */
 export const SIGN_IN_ERROR = "Claude isn't signed in, or its sign-in expired.";
+export const API_KEY_ERROR = "The API key saved in nit was refused. Replace it in Settings → Claude.";
 
 export type Job = {
   id: string;

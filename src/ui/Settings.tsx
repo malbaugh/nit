@@ -6,15 +6,15 @@ import {
   Code,
   ColorFilter,
   GitCompare,
+  Github as GitHubIcon,
   NavArrowDown,
   Settings as SettingsIcon,
   Sparks,
   Xmark,
 } from "iconoir-react/regular";
 import { type ReactNode, useEffect, useState } from "react";
-import type { AuthStatus, CommandSetting, CommandSettings, Prefs } from "../types";
+import type { AuthStatus, CommandSetting, CommandSettings, GitHubAccount, Prefs } from "../types";
 import { api } from "./api";
-import { needSignIn } from "./SignIn";
 import * as st from "./state";
 import { catalog, nameFor, theme, useTheme } from "./theme";
 import { Button, IconButton, Kbd, TextSegmented } from "./ui";
@@ -238,11 +238,49 @@ function Claude() {
         : "Not signed in.";
   return (
     <>
-      <Row title="Account" hint={account}>
-        <Button tone="secondary" onClick={() => needSignIn(null)} disabled={!auth?.installed}>
-          {auth?.loggedIn ? "Sign in again" : "Sign in"}
-        </Button>
+      <Row title="Sign in with" hint="Claude Code's own login, or an API key you save here.">
+        <TextSegmented<Prefs["auth"]>
+          label="Sign in with"
+          value={p.auth}
+          onChange={(a) => st.setPrefs({ auth: a })}
+          options={[
+            { value: "login", label: "Claude Code login" },
+            { value: "apiKey", label: "API key" },
+          ]}
+        />
       </Row>
+      {p.auth === "login" ? (
+        <Row
+          title="Claude Code login"
+          hint={
+            <>
+              {account} To sign in or switch accounts, run <code className="font-mono">claude</code> in a terminal and
+              type <code className="font-mono">/login</code>.
+            </>
+          }
+        >
+          <Button tone="secondary" onClick={() => void api.auth().then(setAuth, () => {})}>
+            Check again
+          </Button>
+        </Row>
+      ) : (
+        <Row
+          title="API key"
+          hint="Kept in your keychain and used only for nit's Claude runs; billed to its Anthropic Console account."
+        >
+          <KeyField
+            label="Anthropic API key"
+            placeholder="sk-ant-…"
+            missing="No key saved yet: Claude runs will fail until you add one."
+            saved={!!auth?.hasKey}
+            store={async (key) => {
+              const { hasKey } = await api.saveClaudeKey(key);
+              setAuth((a) => (a ? { ...a, hasKey } : a));
+              return hasKey;
+            }}
+          />
+        </Row>
+      )}
       <Row title="Model" hint="For co-review, questions and apply. Default is Claude Code's choice.">
         <Choice<Prefs["model"]>
           label="Model"
@@ -273,6 +311,120 @@ function Claude() {
       </Row>
       <Row title="Nitpicks in co-review" hint="Off, co-review proposes only issues and suggestions that matter.">
         <Switch label="Nitpicks in co-review" on={p.nits} onChange={(nits) => st.setPrefs({ nits })} />
+      </Row>
+    </>
+  );
+}
+
+/** A secret saved to your keychain, never shown again: Enter saves, Remove deletes it. */
+function KeyField({
+  saved,
+  store,
+  label,
+  placeholder,
+  missing,
+}: {
+  saved: boolean;
+  /** Saves (or with null removes) the value; resolves to whether one is saved now. */
+  store: (value: string | null) => Promise<boolean>;
+  label: string;
+  placeholder: string;
+  /** What not having one means, shown while none is saved. */
+  missing?: string;
+}) {
+  const [text, setText] = useState("");
+  const [state, setState] = useState<{ ok?: string; error?: string }>({});
+  const save = async (key: string | null) => {
+    try {
+      const has = await store(key);
+      setText("");
+      setState({ ok: has ? "Saved to your keychain" : "Removed" });
+    } catch (e) {
+      setState({ error: e instanceof Error ? e.message : "Couldn't save the key." });
+    }
+  };
+  return (
+    <div className="w-[300px]">
+      <div className="flex gap-1.5">
+        <input
+          type="password"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setState({});
+          }}
+          onKeyDown={(e) => e.key === "Enter" && text.trim() && void save(text.trim())}
+          placeholder={saved ? "Saved · paste a new one to replace it" : placeholder}
+          spellCheck={false}
+          autoComplete="off"
+          aria-label={label}
+          className="h-7 min-w-0 flex-1 rounded-control bg-field px-2.5 font-mono text-[12px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:font-sans placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
+        />
+        {text.trim() ? (
+          <Button tone="secondary" onClick={() => void save(text.trim())}>
+            Save
+          </Button>
+        ) : saved ? (
+          <Button tone="ghost" onClick={() => void save(null)}>
+            Remove
+          </Button>
+        ) : null}
+      </div>
+      <div className="mt-1 h-4 truncate text-[11.5px]">
+        {state.error ? (
+          <span className="text-red">{state.error}</span>
+        ) : state.ok ? (
+          <span className="text-green">{state.ok}</span>
+        ) : !saved && missing ? (
+          <span className="text-orange">{missing}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function GitHub() {
+  const [a, setA] = useState<GitHubAccount | null | undefined>(undefined);
+  useEffect(() => {
+    void api.githubAccount().then(setA, () => setA(null));
+  }, []);
+  if (a === undefined) return <p className="py-4 text-[12.5px] text-ink-3">Checking your GitHub login…</p>;
+  if (a === null) return <p className="py-4 text-[12.5px] text-ink-3">This repo has no GitHub remote.</p>;
+  const via = a.source === "nit" ? "with the token saved in nit" : "through the GitHub CLI";
+  return (
+    <>
+      <Row
+        title="Account"
+        hint={
+          a.login ? (
+            `Signed in as ${a.login} on ${a.host}, ${via}.`
+          ) : a.source ? (
+            `GitHub didn't accept the token ${via}.`
+          ) : (
+            <>
+              Not signed in. Run <code className="font-mono">gh auth login</code> in a terminal, or save a token below.
+            </>
+          )
+        }
+      >
+        <Button tone="secondary" onClick={() => void api.githubAccount().then(setA, () => {})}>
+          Check again
+        </Button>
+      </Row>
+      <Row
+        title="Token"
+        hint={`Optional, for ${a.host}: kept in your keychain, and used instead of the GitHub CLI's login. It needs access to the repo's pull requests.`}
+      >
+        <KeyField
+          label="GitHub token"
+          placeholder="github_pat_…"
+          saved={a.saved}
+          store={async (token) => {
+            const next = await api.saveGitHubToken(token);
+            setA(next);
+            return next.saved;
+          }}
+        />
       </Row>
     </>
   );
@@ -399,6 +551,7 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance", icon: <ColorFilter />, body: Appearance },
   { id: "diff", label: "Diff", icon: <GitCompare />, body: Diff },
   { id: "claude", label: "Claude", icon: <Sparks />, body: Claude },
+  { id: "github", label: "GitHub", icon: <GitHubIcon />, body: GitHub },
   { id: "commands", label: "Commands", icon: <Code />, body: Commands },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -412,13 +565,11 @@ export function SettingsButton() {
   );
 }
 
-let lastSection: SectionId = "appearance";
-
 /** Settings: every change applies at once and is saved for every review. */
 export function SettingsDialog() {
   const open = st.useStore((s) => s.settingsOpen);
-  const [section, setSection] = useState<SectionId>(lastSection);
-  lastSection = section;
+  const section = st.useStore((s) => s.settingsSection);
+  const setSection = (settingsSection: SectionId) => st.set({ settingsSection });
   const current = SECTIONS.find((x) => x.id === section) ?? SECTIONS[0];
   const Body = current.body;
   return (

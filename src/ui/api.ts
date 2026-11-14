@@ -4,6 +4,7 @@ import type {
   CommandSettings,
   Draft,
   FileContents,
+  GitHubAccount,
   GitHubState,
   Job,
   Location,
@@ -44,9 +45,6 @@ export const api = {
     call<{ job: Job }>("POST", "/api/ask", b),
   job: () => call<{ job: Job | null }>("GET", "/api/agent/job"),
   auth: () => call<AuthStatus>("GET", "/api/auth"),
-  signIn: () => call<{ url: string | null }>("POST", "/api/auth/login", {}),
-  cancelSignIn: () => call<{ ok: true }>("DELETE", "/api/auth/login"),
-  signInCode: (code: string) => call<{ ok: true }>("POST", "/api/auth/code", { code }),
   stopAgent: () => call<{ ok: true }>("POST", "/api/agent/stop", {}),
   undoAgent: () => call<{ restored: string[]; kept: string[] }>("POST", "/api/agent/undo", {}),
   agentChanges: async () => {
@@ -62,6 +60,9 @@ export const api = {
   saveTheme: (theme: unknown) => call<{ ok: true }>("PUT", "/api/settings", { theme }),
   saveLayout: (layout: unknown) => call<{ ok: true }>("PUT", "/api/settings", { layout }),
   savePrefs: (prefs: Partial<Prefs>) => call<Prefs>("PUT", "/api/settings/prefs", prefs),
+  saveClaudeKey: (key: string | null) => call<{ hasKey: boolean }>("PUT", "/api/settings/claude-key", { key }),
+  githubAccount: () => call<GitHubAccount | null>("GET", "/api/settings/github"),
+  saveGitHubToken: (token: string | null) => call<GitHubAccount>("PUT", "/api/settings/github", { token }),
   commands: () => call<CommandSettings>("GET", "/api/settings/commands"),
   saveCommands: (patch: Partial<Record<"checkout" | "editor", string | null>>) =>
     call<CommandSettings>("PUT", "/api/settings/commands", patch),

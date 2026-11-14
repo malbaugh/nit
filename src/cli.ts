@@ -19,10 +19,10 @@ import {
   reviewPrompt,
 } from "./coreview";
 import * as git from "./git";
-import { createGitHub } from "./github";
+import { createGitHub, account as githubAccount, parseRemote, saveToken } from "./github";
 import { changedPaths, type Guidelines, guidelinesBlock, guidelineText, loadGuidelines } from "./guidelines";
 import { createNavigator } from "./navigate";
-import { PrefsPatch, prefsOf } from "./prefs";
+import { claudeEnv, PrefsPatch, prefsOf, savedKey, saveKey } from "./prefs";
 import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
 import * as term from "./term";
@@ -61,8 +61,9 @@ function patch() {
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
 const agent = createAgent(root, createSnapshots(root, project), store);
-const auth = createAuth((error) =>
-  term.log(error ? `${term.c.red("✕")} Claude sign-in: ${error}` : `${term.c.green("✓")} signed in to Claude`),
+const authStatus = createAuth(
+  () => claudeEnv({ auth: "login" }),
+  async () => !!(await savedKey()),
 );
 agent.subscribe(term.agent);
 
@@ -344,28 +345,7 @@ const serve = (p: number) =>
         GET: guarded(async () => json({ run: agent.state() })),
       },
       "/api/auth": {
-        GET: guarded(async () => json(await auth.status())),
-      },
-      "/api/auth/login": {
-        POST: guarded(async () => {
-          try {
-            term.log(`${term.c.dim("·")} signing in to Claude in the browser`);
-            return json(await auth.start());
-          } catch (e) {
-            return fail(500, e instanceof Error ? e.message : String(e));
-          }
-        }),
-        DELETE: guarded(async () => {
-          auth.cancel();
-          return json({ ok: true });
-        }),
-      },
-      "/api/auth/code": {
-        POST: guarded(async (req) => {
-          const body = (await req.json().catch(() => ({}))) as { code?: unknown };
-          if (typeof body.code !== "string" || !body.code.trim()) return fail(400, "invalid body");
-          return auth.code(body.code) ? json({ ok: true }) : fail(409, "No sign-in is waiting for a code.");
-        }),
+        GET: guarded(async () => json(await authStatus())),
       },
       "/api/agent/apply": {
         POST: guarded(async (req) => {
@@ -545,6 +525,41 @@ const serve = (p: number) =>
           const prefs = { ...prefsOf(store), ...patch.data };
           store.setSetting("prefs", prefs);
           return json(prefs);
+        }),
+      },
+      "/api/settings/claude-key": {
+        PUT: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as { key?: unknown } | null;
+          const key = body?.key;
+          if (key !== null && (typeof key !== "string" || !/^sk-ant-[\w-]{20,}$/.test(key.trim())))
+            return fail(400, "That isn't an Anthropic API key (they start with sk-ant-).");
+          try {
+            await saveKey(key === null ? null : key.trim());
+            return json({ hasKey: key !== null });
+          } catch (e) {
+            return fail(500, `Couldn't reach your keychain: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }),
+      },
+      "/api/settings/github": {
+        GET: guarded(async () => {
+          const remote = parseRemote((await $`git remote get-url origin`.cwd(root).nothrow().quiet().text()).trim());
+          return json(remote ? await githubAccount(remote.host) : null);
+        }),
+        PUT: guarded(async (req) => {
+          const remote = parseRemote((await $`git remote get-url origin`.cwd(root).nothrow().quiet().text()).trim());
+          if (!remote) return fail(400, "This repo has no origin remote on GitHub.");
+          const body = (await req.json().catch(() => null)) as { token?: unknown } | null;
+          const t = body?.token;
+          if (t !== null && (typeof t !== "string" || !/^(ghp_|github_pat_|gho_|ghu_)[\w]{20,}$/.test(t.trim())))
+            return fail(400, "That isn't a GitHub token (they start with ghp_ or github_pat_).");
+          try {
+            await saveToken(remote.host, t === null ? null : t.trim());
+          } catch (e) {
+            return fail(500, `Couldn't reach your keychain: ${e instanceof Error ? e.message : String(e)}`);
+          }
+          github.reconnect();
+          return json(await githubAccount(remote.host));
         }),
       },
       "/api/settings/commands": {

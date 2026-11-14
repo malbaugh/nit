@@ -9,10 +9,18 @@ import {
 import type { FINDINGS_SCHEMA } from "./coreview";
 import { within } from "./git";
 import type { Guidelines } from "./guidelines";
-import { claudeOptions, prefsOf } from "./prefs";
+import { claudeOptions, prefsOf, savedKey } from "./prefs";
 import type { Snapshots } from "./snapshot";
 import type { Store } from "./store";
-import { type AgentEvent, type AgentOutcome, type AgentRun, type Draft, type Job, SIGN_IN_ERROR } from "./types";
+import {
+  type AgentEvent,
+  type AgentOutcome,
+  type AgentRun,
+  API_KEY_ERROR,
+  type Draft,
+  type Job,
+  SIGN_IN_ERROR,
+} from "./types";
 
 /**
  * Applies review comments with the Claude Agent SDK, on the Claude Code login already on this
@@ -33,9 +41,10 @@ const WHY: Partial<Record<SDKAssistantMessageError, string>> = {
 };
 
 /** The failure a message reports (an API error, or a turn that ended on one), else null. */
-export function failureOf(m: SDKMessage): string | null {
+export function failureOf(m: SDKMessage, usingKey = false): string | null {
   if (m.type === "assistant" && m.error) {
     const text = m.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ");
+    if (m.error === "authentication_failed" && usingKey) return API_KEY_ERROR;
     return WHY[m.error] ?? (text.trim() || m.error);
   }
   if (m.type === "result" && m.is_error) return m.subtype === "success" ? m.result : m.errors.join("; ") || m.subtype;
@@ -137,6 +146,13 @@ export function targetOf(root: string, input: Record<string, unknown>) {
 }
 
 export function createAgent(root: string, snapshots: Snapshots, store: Store) {
+  // Whether this pass bills nit's saved API key (Settings → Claude), set as each one starts; one
+  // pass runs at a time.
+  let keyed = false;
+  const usingKey = () => keyed;
+  const decideKey = async () => {
+    keyed = prefsOf(store).auth === "apiKey" && !!(await savedKey());
+  };
   let current: { run: AgentRun; abort: AbortController; events: AgentEvent[] } | null = null;
   const listeners = new Set<(e: AgentEvent) => void>();
   let replayed: AgentEvent[] = [];
@@ -208,6 +224,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
       context: { guidelines: string; tools: NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]> },
     ) {
       try {
+        await decideKey();
         const messages = query({
           prompt: [promptFor(drafts), context.guidelines].filter(Boolean).join("\n\n"),
           options: {
@@ -216,7 +233,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
             allowedTools: [...TOOLS, ...context.tools.map((t) => `mcp__nit__${t.name}`)],
             mcpServers: { nit: createSdkMcpServer({ name: "nit", tools: context.tools }) },
             settingSources: [],
-            ...claudeOptions(prefsOf(store)),
+            ...(await claudeOptions(prefsOf(store))),
             systemPrompt: { type: "preset", preset: "claude_code", append: INSTRUCTIONS },
             hooks: { PreToolUse: [{ hooks: [confine] }] },
             outputFormat: OUTCOMES,
@@ -241,7 +258,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
     /** Turns one SDK message into progress events and the run's results. */
     read(run: AgentRun, m: SDKMessage) {
       if ("session_id" in m && m.session_id && run.sessionId !== m.session_id) run.sessionId = m.session_id;
-      const failed = failureOf(m);
+      const failed = failureOf(m, usingKey());
       if (failed) {
         run.error ??= failed;
         return;
@@ -256,7 +273,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
       } else if (m.type === "result") {
         // On a Claude subscription nothing is billed per token: the SDK's estimate would only
         // alarm. With an API key it's real money, so it's shown.
-        run.costUsd = process.env.ANTHROPIC_API_KEY ? m.total_cost_usd : null;
+        run.costUsd = usingKey() ? m.total_cost_usd : null;
         if (m.subtype === "success") {
           const out = (m.structured_output as { outcomes?: AgentOutcome[] } | undefined)?.outcomes ?? [];
           run.outcomes = out.filter((o) => run.drafts.includes(o.id));
@@ -308,6 +325,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
       void (async () => {
         let structured: unknown;
         try {
+          await decideKey();
           const messages = query({
             prompt: o.prompt,
             options: {
@@ -316,7 +334,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
               allowedTools: [...READ_TOOLS, ...names],
               mcpServers: { nit: server },
               settingSources: [],
-              ...claudeOptions(prefsOf(store)),
+              ...(await claudeOptions(prefsOf(store))),
               systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
               hooks: { PreToolUse: [{ hooks: [confineReview] }] },
               includePartialMessages: kind === "ask",
@@ -327,7 +345,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
           });
           for await (const m of messages as AsyncIterable<SDKMessage>) {
             if ("session_id" in m && m.session_id) j.sessionId = m.session_id;
-            const failed = failureOf(m);
+            const failed = failureOf(m, usingKey());
             if (failed) {
               j.error ??= failed;
               continue;

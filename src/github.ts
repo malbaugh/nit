@@ -12,11 +12,42 @@ export { parseRemote };
 
 const out = async (p: ReturnType<typeof $>) => (await p.nothrow().quiet().text()).trim();
 
-/** The user's existing login: GH_TOKEN / GITHUB_TOKEN, else the GitHub CLI's (`gh auth token`). */
+// GitHub tokens nit never takes from its environment: Bun loads the reviewed repo's .env files, so
+// they may be that repo's. gh reads them too (ahead of its own login), so it doesn't see them.
+const ENV_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
+export function ghEnv() {
+  const env: Record<string, string | undefined> = { ...process.env };
+  for (const k of ENV_TOKENS) delete env[k];
+  return env;
+}
+const secret = (host: string) => ({ service: "nit", name: `github-token:${host}` });
+
+/** A token saved in nit for `host` (your OS keychain), or null. */
+export const savedToken = (host: string) => Bun.secrets.get(secret(host)).catch(() => null);
+
+/** Saves (or, with null, removes) nit's token for `host` in your OS keychain. */
+export async function saveToken(host: string, value: string | null) {
+  if (value) await Bun.secrets.set({ ...secret(host), value });
+  else await Bun.secrets.delete(secret(host));
+}
+
+/** Your GitHub login: the token saved in nit, else the GitHub CLI's own (`gh auth token`). */
 export async function token(host: string) {
-  const env = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
-  if (env) return env;
-  return out($`gh auth token --hostname ${host}`);
+  return (await savedToken(host)) || out($`gh auth token --hostname ${host}`.env(ghEnv()));
+}
+
+/** Where the token comes from and whose it is, for the settings screen. */
+export async function account(host: string) {
+  const saved = await savedToken(host);
+  const auth = saved || (await out($`gh auth token --hostname ${host}`.env(ghEnv())));
+  if (!auth) return { host, source: null, login: null, saved: false };
+  try {
+    const octokit = new Octokit({ auth, baseUrl: host === "github.com" ? undefined : `https://${host}/api/v3` });
+    const { data } = await octokit.rest.users.getAuthenticated();
+    return { host, source: saved ? ("nit" as const) : ("gh" as const), login: data.login, saved: !!saved };
+  } catch {
+    return { host, source: saved ? ("nit" as const) : ("gh" as const), login: null, saved: !!saved };
+  }
 }
 
 const THREAD_FIELDS = `
@@ -83,7 +114,10 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
       const remote = parseRemote(await out($`git remote get-url origin`.cwd(root)));
       if (!remote) return { reason: "This repo has no origin remote on GitHub." };
       const auth = await token(remote.host);
-      if (!auth) return { reason: "Sign in with `gh auth login` (or set GH_TOKEN) to see and post GitHub comments." };
+      if (!auth)
+        return {
+          reason: "Sign in with `gh auth login`, or save a token in Settings → GitHub, to see and post comments.",
+        };
       const api = remote.host === "github.com" ? undefined : `https://${remote.host}/api/v3`;
       const octokit = new Octokit({ auth, baseUrl: api, userAgent: "nit" });
       let number = forcedPr;
@@ -162,6 +196,12 @@ export function createGitHub(root: string, branch: string, forcedPr: number | nu
   }
 
   return {
+    /** Forget the connection, after the token changed. */
+    reconnect() {
+      ctx = null;
+      cache = null;
+    },
+
     /** Cached for 30 seconds; `fresh` refetches. Never throws. */
     state(fresh = false): Promise<GitHubState> {
       if (fresh || !cache || Date.now() - cache.at > 30_000) {

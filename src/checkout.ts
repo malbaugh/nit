@@ -47,7 +47,8 @@ export async function checkoutPr(
     );
 
   const auth = await token(remote.host);
-  if (!auth) throw new Error("sign in with `gh auth login` (or set GH_TOKEN) to open a pull request");
+  if (!auth)
+    throw new Error("sign in with `gh auth login` (or save a token in nit's Settings → GitHub) to open a pull request");
   const octokit = new Octokit({
     auth,
     baseUrl: remote.host === "github.com" ? undefined : `https://${remote.host}/api/v3`,
