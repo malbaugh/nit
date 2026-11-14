@@ -1,6 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { createSdkMcpServer, type HookCallback, query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { FINDINGS_SCHEMA } from "./coreview";
+import { within } from "./git";
 import type { Guidelines } from "./guidelines";
 import type { Snapshots } from "./snapshot";
 import type { Store } from "./store";
@@ -16,18 +17,15 @@ import type { AgentEvent, AgentOutcome, AgentRun, Draft, Job } from "./types";
 const TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
 const READ_TOOLS = ["Read", "Glob", "Grep"];
 
-const INSTRUCTIONS = `You are applying code review comments inside a review tool. The reviewer wrote each
-comment on lines of a file in this checkout.
+const INSTRUCTIONS = `You are applying a reviewer's comments to this checkout. Each comment sits on lines of one file.
 
 For each comment:
-- Make the smallest change that addresses it, in the codebase's own style, following the
-  project's rules in <guidelines> (from the base branch; read more with read_guideline).
-- A comment with a <suggestion> gives the exact replacement for its lines: apply that text.
-- A question, or a comment you can't act on safely, gets no code change: answer it in the note.
-- Change nothing the comments don't ask for. You can't run commands, and you don't commit.
+- Make the smallest change that does what it asks, in the code's own style and within the rules in <guidelines>.
+- A <suggestion> is the exact replacement for its lines: apply its text as written.
+- A question, or a comment you can't act on safely, gets its answer in the note and leaves the code as it is.
+- Keep every other line as it is. You edit files; running commands and committing stay with the reviewer.
 
-Finish with one outcome per comment: its id, "done", "skipped" or "question", and a one-sentence
-note saying what you changed or why not.`;
+Done when every comment has an outcome: its id, "done", "skipped" or "question", and a one-sentence note on what you changed or why not.`;
 
 const OUTCOMES = {
   type: "json_schema" as const,
@@ -88,7 +86,7 @@ export function confineTo(root: string, opts: { guidelinesFromBase?: boolean } =
             permissionDecisionReason: `This pull request may change ${rel}. Use read_guideline("${rel}") for the base branch's rules.`,
           },
         };
-      if (rel.startsWith("..") || isAbsolute(rel) || rel === ".git" || rel.startsWith(".git/"))
+      if (!within(root, p) || rel === ".git" || rel.startsWith(".git/"))
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",

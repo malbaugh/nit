@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { isAbsolute, relative, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { $ } from "bun";
 
 const out = async (p: ReturnType<typeof $>) => (await p.nothrow().quiet().text()).trim();
@@ -77,19 +78,53 @@ export async function diff(root: string, base: string) {
   return tracked + added.join("");
 }
 
-/** Resolves a repo-relative path, refusing anything outside the repo. */
+const realRoots = new Map<string, string>();
+
+/** The real path of `p`, following symlinks through its nearest existing ancestor (new files don't exist yet). */
+function realOf(p: string): string {
+  for (let cur = p; ; cur = dirname(cur)) {
+    try {
+      return join(realpathSync(cur), relative(cur, p));
+    } catch {
+      if (dirname(cur) === cur) return p;
+    }
+  }
+}
+
+const under = (rel: string) => !rel.startsWith("..") && !isAbsolute(rel);
+
+/** True when `path` is `root` or inside it, both as written and once symlinks are followed. */
+export function within(root: string, path: string) {
+  if (!under(relative(root, resolve(root, path)))) return false;
+  const real = realRoots.get(root) ?? realOf(root);
+  realRoots.set(root, real);
+  return under(relative(real, realOf(resolve(root, path))));
+}
+
+/** Resolves a repo-relative path to a file inside the repo, refusing escapes, symlinks included. */
 export function safePath(root: string, path: string) {
-  const full = resolve(root, path);
-  const rel = relative(root, full);
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`path outside repo: ${path}`);
-  return full;
+  if (!relative(root, resolve(root, path)) || !within(root, path)) throw new Error(`path outside repo: ${path}`);
+  return resolve(root, path);
 }
 
 export async function readAtRef(root: string, ref: string, path: string): Promise<string | null> {
-  safePath(root, path);
-  const r = await $`git show ${`${ref}:${path}`}`.cwd(root).nothrow().quiet();
-  return r.exitCode === 0 ? r.text() : null;
+  const rel = relative(root, resolve(root, path));
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`path outside repo: ${path}`);
+  // A commit's files never change: cache reads at a full sha (the session's merge base).
+  const key = /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(ref) ? `${root}\0${ref}\0${path}` : null;
+  const hit = key ? atRef.get(key) : undefined;
+  if (hit) return hit;
+  const read = $`git show ${`${ref}:${path}`}`
+    .cwd(root)
+    .nothrow()
+    .quiet()
+    .then((r) => (r.exitCode === 0 ? r.text() : null));
+  if (key) atRef.set(key, read);
+  return read;
 }
+
+// ponytail: unbounded; one review touches a bounded set of files.
+const atRef = new Map<string, Promise<string | null>>();
 
 export async function readWorking(root: string, path: string): Promise<string | null> {
   const f = Bun.file(safePath(root, path));

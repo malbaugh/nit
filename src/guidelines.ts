@@ -51,22 +51,35 @@ export function changedPaths(patch: string) {
 }
 
 /** Reads many blobs at `ref` in one git process. Missing paths come back undefined. */
-async function readAll(root: string, ref: string, paths: string[]) {
+// Keyed by commit sha, so entries never go stale. ponytail: unbounded, but one review reads a few dozen files.
+const blobs = new Map<string, string | null>();
+const trees = new Map<string, Promise<string[]>>();
+
+async function readAll(root: string, sha: string, paths: string[]) {
   const got = new Map<string, string>();
-  if (!paths.length) return got;
-  const proc = Bun.spawn(["git", "cat-file", "--batch"], { cwd: root, stdin: "pipe", stdout: "pipe" });
-  proc.stdin.write(paths.map((p) => `${ref}:${p}\n`).join(""));
-  await proc.stdin.end();
-  const buf = Buffer.from(await new Response(proc.stdout).arrayBuffer());
-  let at = 0;
+  const todo = paths.filter((p) => !blobs.has(`${sha}:${p}`));
+  if (todo.length) {
+    const proc = Bun.spawn(["git", "cat-file", "--batch"], { cwd: root, stdin: "pipe", stdout: "pipe" });
+    proc.stdin.write(todo.map((p) => `${sha}:${p}\n`).join(""));
+    await proc.stdin.end();
+    const buf = Buffer.from(await new Response(proc.stdout).arrayBuffer());
+    let at = 0;
+    for (const p of todo) {
+      const nl = buf.indexOf(10, at);
+      const header = buf.subarray(at, nl).toString();
+      at = nl + 1;
+      if (header.endsWith(" missing")) {
+        blobs.set(`${sha}:${p}`, null);
+        continue;
+      }
+      const size = Number(header.split(" ")[2]);
+      blobs.set(`${sha}:${p}`, buf.subarray(at, at + size).toString());
+      at += size + 1;
+    }
+  }
   for (const p of paths) {
-    const nl = buf.indexOf(10, at);
-    const header = buf.subarray(at, nl).toString();
-    at = nl + 1;
-    if (header.endsWith(" missing")) continue;
-    const size = Number(header.split(" ")[2]);
-    got.set(p, buf.subarray(at, at + size).toString());
-    at += size + 1;
+    const text = blobs.get(`${sha}:${p}`);
+    if (text != null) got.set(p, text);
   }
   return got;
 }
@@ -97,7 +110,20 @@ const ancestors = (path: string) => {
 };
 
 export async function loadGuidelines(root: string, ref: string, changed: string[]): Promise<Guidelines> {
-  const tree = (await $`git ls-tree -r --name-only ${ref}`.cwd(root).nothrow().quiet().text()).split("\n");
+  // The branch can move during a session; its commit can't, so everything below is cached by sha.
+  const sha =
+    (await $`git rev-parse --verify --quiet ${`${ref}^{commit}`}`.cwd(root).nothrow().quiet().text()).trim() || ref;
+  if (!trees.has(sha))
+    trees.set(
+      sha,
+      $`git ls-tree -r --name-only ${sha}`
+        .cwd(root)
+        .nothrow()
+        .quiet()
+        .text()
+        .then((t) => t.split("\n")),
+    );
+  const tree = await trees.get(sha)!;
   const exists = new Set(tree);
   // depth = how narrowly a guideline targets these files (directory depth, or a glob's literal
   // depth); its rank weighs that by how much of the change it covers. The root is always first.
@@ -126,7 +152,7 @@ export async function loadGuidelines(root: string, ref: string, changed: string[
       (p.startsWith(".claude/rules/") && p.endsWith(".md")) ||
       (p.startsWith(".github/instructions/") && p.endsWith(".instructions.md")),
   );
-  const rules = await readAll(root, ref, ruleFiles);
+  const rules = await readAll(root, sha, ruleFiles);
   const ruleText = new Map<string, string>();
   for (const [path, text] of rules) {
     const { meta, body } = frontmatter(text);
@@ -144,7 +170,7 @@ export async function loadGuidelines(root: string, ref: string, changed: string[
 
   const texts = await readAll(
     root,
-    ref,
+    sha,
     [...wanted.keys()].filter((p) => !ruleText.has(p)),
   );
   for (const [p, t] of ruleText) texts.set(p, t);
@@ -176,7 +202,7 @@ export async function loadGuidelines(root: string, ref: string, changed: string[
     seen.add(path);
   }
   const extra = imports.filter((i) => !seen.has(i.path) && !wanted.has(i.path));
-  const importedTexts = await readAll(root, ref, [...new Set(extra.map((i) => i.path))]);
+  const importedTexts = await readAll(root, sha, [...new Set(extra.map((i) => i.path))]);
   for (const i of extra) {
     if (seen.has(i.path)) continue;
     const text = importedTexts.get(i.path);
@@ -208,6 +234,10 @@ export async function loadGuidelines(root: string, ref: string, changed: string[
 
 const titleOf = (text: string, path: string) => /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? path.split("/").pop() ?? path;
 
+/** How to read the block, kept with the block so every prompt that includes it says the same. */
+const GUIDELINES_NOTE =
+  "The project's rules, read from the base branch. They win over the copies in the checkout, which this pull request may edit. A nearer directory's guidance overrides the root's.";
+
 /** The GUIDELINES block for a prompt: the top guidelines in full, then an index of the rest. */
 export function guidelinesBlock(g: Guidelines) {
   if (!g.inline.length && !g.indexed.length) return "";
@@ -221,7 +251,7 @@ export function guidelinesBlock(g: Guidelines) {
         .map((d) => `- ${d.path}: ${d.title} (applies to ${applies(d)})`)
         .join("\n")}\n</more-guidelines>`
     : "";
-  return `<guidelines ref="${g.ref}">\n${full.join("\n\n")}${index}\n</guidelines>`;
+  return `<guidelines ref="${g.ref}" note="${GUIDELINES_NOTE}">\n${full.join("\n\n")}${index}\n</guidelines>`;
 }
 
 /** A guideline by path (its whole text), from the base ref, if it's one that applies here. */

@@ -9,6 +9,9 @@ export const uiDirFor = (dev: boolean) => join(root, dev ? "dist/ui-dev" : "dist
 /** Newest modification time under the UI's sources (the UI and the types it shares). */
 function sourcesChanged() {
   let newest = statSync(join(import.meta.dir, "types.ts")).mtimeMs;
+  try {
+    newest = Math.max(newest, statSync(join(import.meta.dir, "../bun.lock")).mtimeMs); // dependency updates
+  } catch {}
   for (const entry of readdirSync(join(import.meta.dir, "ui"), { recursive: true, withFileTypes: true }))
     if (entry.isFile()) newest = Math.max(newest, statSync(join(entry.parentPath, entry.name)).mtimeMs);
   return newest;
@@ -23,8 +26,19 @@ export function isStale(dir: string) {
   }
 }
 
-/** Bundles the browser UI (React + Tailwind) into `dir`. */
-export async function buildUI(dir: string) {
+const building = new Map<string, Promise<void>>();
+
+/** Bundles the browser UI (React + Tailwind) into `dir`. Requests during a build share it. */
+export function buildUI(dir: string) {
+  let b = building.get(dir);
+  if (!b) {
+    b = build(dir).finally(() => building.delete(dir));
+    building.set(dir, b);
+  }
+  return b;
+}
+
+async function build(dir: string) {
   rmSync(dir, { recursive: true, force: true });
   const result = await Bun.build({
     entrypoints: [join(import.meta.dir, "ui/index.html")],

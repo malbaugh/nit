@@ -45,6 +45,7 @@ export function openStore(review: string) {
   const db = new Database(join(dir, "nit.db"), { create: true, strict: true });
   db.run("PRAGMA journal_mode = WAL");
   db.run("PRAGMA busy_timeout = 3000");
+  db.run("PRAGMA synchronous = NORMAL"); // safe with WAL; skips an fsync per write
   db.run(`create table if not exists draft (
     id text primary key,
     review text not null,

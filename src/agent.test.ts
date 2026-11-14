@@ -39,3 +39,21 @@ test("reviewing: the checkout's guideline files are refused (read_guideline give
   expect(await decision(hook, "Read", "/repo/src/agents.ts")).toBe("allow");
   expect(await decision(confineTo(root), "Read", "/repo/AGENTS.md")).toBe("allow"); // Apply may read them
 });
+
+test("a symlink inside the checkout that points out of it is refused", async () => {
+  const { mkdtempSync, symlinkSync, rmSync, mkdirSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "nit-link-"));
+  const repo = join(dir, "repo");
+  mkdirSync(repo);
+  symlinkSync("/etc", join(repo, "etc"));
+  try {
+    const hook = confineTo(repo);
+    expect(await decision(hook, "Read", join(repo, "etc/passwd"))).toBe("deny");
+    expect(await decision(hook, "Write", join(repo, "etc/new-file"))).toBe("deny");
+    expect(await decision(hook, "Write", join(repo, "src/new.ts"))).toBe("allow");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

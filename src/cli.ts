@@ -527,7 +527,7 @@ const serve = (p: number) =>
     },
     fetch: guarded(async (req) => {
       const path = new URL(req.url).pathname;
-      if (dev && path === "/") await buildUI(uiDir);
+      if (dev && path === "/" && isStale(uiDir)) await buildUI(uiDir);
       if (path === "/") {
         // The saved theme goes in before first paint, so the page never flashes the default.
         const html = await Bun.file(join(uiDir, "index.html")).text();
@@ -538,8 +538,13 @@ const serve = (p: number) =>
         });
       }
       const file = Bun.file(join(uiDir, path));
-      if (!path.includes("..") && (await file.exists())) return new Response(file);
-      return fail(404, "not found");
+      if (path.includes("..") || !(await file.exists())) return fail(404, "not found");
+      // Chunk names carry a content hash: the browser can keep them for good.
+      return new Response(file, {
+        headers: /\/chunk-[a-z0-9]+\.(js|css)$/.test(path)
+          ? { "cache-control": "public, max-age=31536000, immutable" }
+          : {},
+      });
     }),
   });
 
