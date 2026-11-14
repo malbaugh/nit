@@ -143,6 +143,23 @@ export type CheckAnnotation = {
   message: string;
 };
 
+export type LinearIssue = {
+  identifier: string;
+  title: string;
+  description: string | null;
+  url: string;
+  state: { name: string; color: string };
+};
+
+/** The Linear issue this branch is for: the issue itself once fetched with a saved API key. */
+export type LinearLink = {
+  key: string;
+  url: string | null;
+  issue: LinearIssue | null;
+  hasKey: boolean;
+  error?: string;
+};
+
 export type GitHubState =
   | { status: "unavailable"; reason: string }
   | {

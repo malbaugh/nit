@@ -9,6 +9,7 @@ import {
   type FileContents,
   type GitHubState,
   type Job,
+  type LinearLink,
   type Location,
   type Prefs,
   type ReviewData,
@@ -85,7 +86,7 @@ export type State = {
   reviewOpen: boolean;
   settingsOpen: boolean;
   /** The settings section shown, kept between openings. */
-  settingsSection: "appearance" | "diff" | "claude" | "github" | "commands";
+  settingsSection: "appearance" | "diff" | "claude" | "github" | "linear" | "commands";
   /** The search screen replaces the diff; its query lives in the URL (?search=…). */
   searchOpen: boolean;
   search: { query: string; regex: boolean; caseSensitive: boolean };
@@ -114,6 +115,8 @@ export type State = {
   widths: Widths;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
+  /** The Linear issue this branch is for. */
+  linear: LinearLink | null;
   /** Files shown whole (every unchanged line expanded), by path. */
   fullFiles: Set<string>;
 };
@@ -169,6 +172,7 @@ let state: State = {
   suggesting: null,
   widths: { files: savedLayout.files ?? DEFAULT_WIDTHS.files, outline: savedLayout.outline ?? DEFAULT_WIDTHS.outline },
   github: null,
+  linear: null,
   fullFiles: new Set(),
 };
 
@@ -748,6 +752,7 @@ export function restoreBackups() {
 export async function loadGitHub(fresh = false) {
   try {
     set({ github: await api.github(fresh) });
+    set({ linear: await api.linear() }); // reads the PR's title and description
   } catch {
     // The server is unreachable; local review keeps working.
   }

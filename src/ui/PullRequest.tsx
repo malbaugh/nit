@@ -8,7 +8,7 @@ import {
   WarningTriangle,
   XmarkCircle,
 } from "iconoir-react/regular";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Check, CheckAnnotation } from "../types";
 import { Markdown } from "./Comments";
 import * as st from "./state";
@@ -70,6 +70,7 @@ export function PullRequestButton() {
               </Popover.Title>
             </header>
             <div className="min-h-0 overflow-y-auto">
+              <LinearIssueSection />
               {gh.checks.length ? <Checks checks={gh.checks} annotations={gh.annotations} /> : null}
               <section className="px-3.5 py-3 text-[13px]">
                 {gh.body.trim() ? <Markdown source={gh.body} /> : <p className="text-ink-3">No description.</p>}
@@ -79,6 +80,85 @@ export function PullRequestButton() {
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** Long text folded to a few lines that fade out, with Show more when there's more to show. */
+function Clamped({ children }: { children: React.ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [over, setOver] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || open) return;
+    // The Markdown renders late (lazy), so watch its size rather than measuring once.
+    const watch = new ResizeObserver(() => setOver(el.scrollHeight > el.clientHeight + 1));
+    if (el.firstElementChild) watch.observe(el.firstElementChild);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [open]);
+  return (
+    <div className="mt-2 text-[13px]">
+      <div ref={box} className={open ? "" : `max-h-28 overflow-hidden ${over ? "mask-b-from-60%" : ""}`}>
+        <div>{children}</div>
+      </div>
+      {over && !open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-1 text-[12px] text-ink-3 [@media(hover:hover)]:hover:text-ink-2"
+        >
+          Show more
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The Linear issue the branch is for: why the change exists, before what it does. */
+function LinearIssueSection() {
+  const link = st.useStore((s) => s.linear);
+  if (!link) return null;
+  const issue = link.issue;
+  return (
+    <section className="px-3.5 py-2.5 shadow-[0_1px_0_var(--line)]">
+      <a
+        href={link.url ?? undefined}
+        target="_blank"
+        rel="noreferrer"
+        className="flex min-w-0 items-center gap-2 text-[12.5px] [@media(hover:hover)]:hover:[&>.title]:underline"
+      >
+        {issue ? (
+          <span
+            className="size-2 shrink-0 rounded-full"
+            style={{ background: issue.state.color }}
+            title={issue.state.name}
+          />
+        ) : null}
+        <span className="shrink-0 font-medium text-ink-2 tabular-nums">{link.key}</span>
+        {issue ? <span className="title min-w-0 truncate text-ink">{issue.title}</span> : null}
+        {issue ? <span className="shrink-0 text-[11.5px] text-ink-3">{issue.state.name}</span> : null}
+        {link.url ? <OpenNewWindow width={11} height={11} className="ml-auto shrink-0 text-ink-3" /> : null}
+      </a>
+      {link.error ? (
+        <p className="mt-1 text-[12px] text-red">{link.error}</p>
+      ) : !link.hasKey ? (
+        <p className="mt-1 text-[12px] text-ink-3">
+          <button
+            type="button"
+            className="text-accent-ink [@media(hover:hover)]:hover:underline"
+            onClick={() => st.set({ settingsOpen: true, settingsSection: "linear" })}
+          >
+            Add a Linear API key
+          </button>{" "}
+          to read the issue here.
+        </p>
+      ) : issue?.description?.trim() ? (
+        <Clamped>
+          <Markdown source={issue.description} />
+        </Clamped>
+      ) : null}
+    </section>
   );
 }
 

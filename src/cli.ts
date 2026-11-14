@@ -23,6 +23,7 @@ import {
 import * as git from "./git";
 import { createGitHub, account as githubAccount, parseRemote, saveToken } from "./github";
 import { changedPaths, type Guidelines, guidelinesBlock, guidelineText, loadGuidelines } from "./guidelines";
+import { linearLink, linearRef, savedLinearKey, saveLinearKey } from "./linear";
 import { createNavigator } from "./navigate";
 import { claudeEnv, PrefsPatch, prefsOf, savedKey, saveKey } from "./prefs";
 import { createSnapshots } from "./snapshot";
@@ -379,6 +380,27 @@ const serve = (p: number) =>
           const after = p.get("after") ?? undefined;
           if (after && after.length > 200) return fail(400, "invalid cursor");
           return json(nav.search(q, { regex: p.get("regex") === "1", caseSensitive: p.get("case") === "1", after }));
+        }),
+      },
+      "/api/linear": {
+        GET: guarded(async () => {
+          const gh = await github.state();
+          const pr = gh.status === "ready" ? gh : null;
+          return json(await linearLink(linearRef(branch, pr?.pr.title, pr?.body)));
+        }),
+      },
+      "/api/settings/linear-key": {
+        GET: guarded(async () => json({ hasKey: !!(await savedLinearKey()) })),
+        PUT: guarded(async (req) => {
+          const key = ((await req.json().catch(() => null)) as { key?: unknown } | null)?.key;
+          if (key !== null && (typeof key !== "string" || !/^lin_api_\w{20,}$/.test(key.trim())))
+            return fail(400, "That isn't a Linear API key (they start with lin_api_).");
+          try {
+            await saveLinearKey(key === null ? null : key.trim());
+            return json({ hasKey: key !== null });
+          } catch (e) {
+            return fail(500, `Couldn't reach your keychain: ${e instanceof Error ? e.message : String(e)}`);
+          }
         }),
       },
       "/api/github": {

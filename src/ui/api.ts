@@ -8,6 +8,7 @@ import type {
   GitHubAccount,
   GitHubState,
   Job,
+  LinearLink,
   Location,
   PostResult,
   Prefs,
@@ -70,6 +71,9 @@ export const api = {
   saveCommands: (patch: Partial<Record<"checkout" | "editor", string | null>>) =>
     call<CommandSettings>("PUT", "/api/settings/commands", patch),
   openInEditor: (path: string, line: number) => call<{ ran: string }>("POST", "/api/open-in-editor", { path, line }),
+  linear: () => call<LinearLink | null>("GET", "/api/linear"),
+  linearKey: () => call<{ hasKey: boolean }>("GET", "/api/settings/linear-key"),
+  saveLinearKey: (key: string | null) => call<{ hasKey: boolean }>("PUT", "/api/settings/linear-key", { key }),
   review: (ignoreSpace: boolean) => call<ReviewData>("GET", `/api/review${ignoreSpace ? "?w" : ""}`),
   file: (path: string, prev?: string) =>
     call<FileContents>("GET", `/api/file?${new URLSearchParams({ path, prev: prev ?? "" })}`),

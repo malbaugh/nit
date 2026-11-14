@@ -8,6 +8,7 @@ import {
   GitCompare,
   Github as GitHubIcon,
   NavArrowDown,
+  Page,
   Settings as SettingsIcon,
   Sparks,
   Xmark,
@@ -433,6 +434,34 @@ function GitHub() {
   );
 }
 
+function Linear() {
+  const [hasKey, setHasKey] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    void api.linearKey().then(
+      (r) => setHasKey(r.hasKey),
+      () => setHasKey(false),
+    );
+  }, []);
+  return (
+    <Row
+      title="API key"
+      hint="Optional: with a personal API key (Linear → Settings → Security & access), the issue a branch is for shows with its pull request. Kept in your keychain."
+    >
+      <KeyField
+        label="Linear API key"
+        placeholder="lin_api_…"
+        saved={!!hasKey}
+        store={async (key) => {
+          const r = await api.saveLinearKey(key);
+          setHasKey(r.hasKey);
+          void st.loadGitHub();
+          return r.hasKey;
+        }}
+      />
+    </Row>
+  );
+}
+
 /** A command, saved to your config file when you leave the field or press Enter. */
 function CommandField({
   name,
@@ -555,6 +584,7 @@ const SECTIONS = [
   { id: "diff", label: "Diff", icon: <GitCompare />, body: Diff },
   { id: "claude", label: "Claude", icon: <Sparks />, body: Claude },
   { id: "github", label: "GitHub", icon: <GitHubIcon />, body: GitHub },
+  { id: "linear", label: "Linear", icon: <Page />, body: Linear },
   { id: "commands", label: "Commands", icon: <Code />, body: Commands },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
