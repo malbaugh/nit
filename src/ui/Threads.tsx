@@ -80,6 +80,20 @@ function Comment({ c, suggestionBase }: { c: ThreadComment; suggestionBase: stri
 }
 
 /** A review thread already on the pull request, shown under its line. */
+
+/** A comment's first line of words, for a folded thread: bots open with HTML comments and tags. */
+const gist = (body: string) =>
+  body
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<[^>]+>/g, "")
+    .split("\n")
+    .map((l) =>
+      l
+        .replace(/^\s*(#+|>|[-*+])\s+/, "")
+        .replace(/[*_`~]/g, "")
+        .trim(),
+    )
+    .find(Boolean) ?? "";
 export function ThreadAnnotation({ id }: { id: string }) {
   const thread = st.useStore((s) =>
     s.github?.status === "ready" ? s.github.threads.find((t) => t.id === id) : undefined,
@@ -133,7 +147,7 @@ export function ThreadAnnotation({ id }: { id: string }) {
             <span className="shrink-0 font-medium text-ink-2">Resolved</span>
             {first ? (
               <span className="min-w-0 truncate text-ink-3">
-                {first.author}: {first.body.split("\n")[0]}
+                {first.author}: {gist(first.body)}
               </span>
             ) : null}
             <span className="ml-auto shrink-0 text-ink-3 tabular-nums">{thread.comments.length}</span>
