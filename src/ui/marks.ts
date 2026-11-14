@@ -68,26 +68,36 @@ export function useFindMarks() {
     if (!re || typeof CSS === "undefined" || !("highlights" in CSS)) return;
     const watched = new WeakSet<ShadowRoot>();
     let frame = 0;
-    const schedule = () => {
+    const repaint = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        for (const host of document.querySelectorAll("diffs-container"))
-          if (host.shadowRoot && !watched.has(host.shadowRoot)) {
-            watched.add(host.shadowRoot);
-            rows.observe(host.shadowRoot, { childList: true, subtree: true });
-          }
-        paint(re);
-      });
+      frame = requestAnimationFrame(() => paint(re));
     };
-    // New diff hosts appear in the page; their rows change inside their shadow roots.
-    const page = new MutationObserver(schedule);
-    const rows = new MutationObserver(schedule);
-    page.observe(document.body, { childList: true, subtree: true });
-    schedule();
+    // Rows change inside each diff's shadow root (scrolling, expanding, comments opening).
+    const rows = new MutationObserver(repaint);
+    const attach = () => {
+      let added = false;
+      for (const host of document.querySelectorAll("diffs-container"))
+        if (host.shadowRoot && !watched.has(host.shadowRoot)) {
+          watched.add(host.shadowRoot);
+          rows.observe(host.shadowRoot, { childList: true, subtree: true });
+          added = true;
+        }
+      if (added) repaint();
+    };
+    // A new diff appears when the file or the view changes, and that goes through the store; the
+    // rest of the page (a streaming answer, typing in a comment) never repaints the marks.
+    let looking = 0;
+    const off = st.subscribeToStore(() => {
+      cancelAnimationFrame(looking);
+      looking = requestAnimationFrame(attach);
+    });
+    attach();
+    repaint();
     return () => {
-      page.disconnect();
+      off();
       rows.disconnect();
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(looking);
       CSS.highlights.delete("nit-find");
     };
   }, [on, search]);

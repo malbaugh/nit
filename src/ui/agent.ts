@@ -1,4 +1,4 @@
-import { type AgentEvent, type AgentRun, type Job, SIGN_IN_ERROR } from "../types";
+import { type AgentEvent, type AgentRun, type AskThread, type Job, SIGN_IN_ERROR } from "../types";
 import { api } from "./api";
 import * as nav from "./nav";
 import { needSignIn } from "./SignIn";
@@ -39,14 +39,28 @@ function onJob(job: Job) {
 }
 
 async function jobFinished(job: Job) {
-  if (job.error === SIGN_IN_ERROR) return needSignIn(job.kind === "review" ? coreview : () => ask(job.question ?? ""));
+  if (job.error === SIGN_IN_ERROR)
+    return needSignIn(
+      job.kind === "review"
+        ? coreview
+        : // The same question about the same lines, wherever you are by then.
+          () => {
+            if (!job.at) return;
+            st.set({ asking: job.at, peek: null });
+            void ask(job.question ?? "", job.at);
+          },
+    );
   // An open ask box shows its own error.
   if (job.state === "failed")
     return job.kind === "ask" && st.get().asking
       ? undefined
       : st.fail(`Claude couldn't finish: ${job.error ?? "unknown error"}`);
-  // A finished answer is saved with its lines' conversation: reload to show it there.
-  if (job.kind === "ask" && job.state === "done") return void st.load();
+  // A finished answer is saved with its lines' conversation: fetch those to show it there.
+  if (job.kind === "ask" && job.state === "done")
+    return void api.asks().then(
+      (asks) => st.set({ asks }),
+      () => {},
+    );
   if (job.state === "stopped" || job.kind !== "review") return;
   await st.load(); // the proposals are drafts now
   const dropped = job.dropped.length ? ` · ${job.dropped.length} dropped by checks` : "";
@@ -70,11 +84,16 @@ export async function coreview() {
   }
 }
 
-/** Reopens a conversation from earlier in the review, at its lines. */
-export function reopen(t: { path: string; side: import("../types").Side; start: number; end: number }) {
+/**
+ * Reopens a conversation from earlier in the review, at its lines: on the old side for removed
+ * lines (found by the file's old name, in case it was renamed).
+ */
+export function reopen(t: AskThread) {
+  const index = st.get().files.findIndex((f) => (t.side === "deletions" ? (f.prevName ?? f.name) : f.name) === t.path);
+  if (index === -1) return st.fail(`${t.path} isn't in this review any more.`);
   st.set({ agentOpen: false });
-  nav.openLocation({ path: t.path, line: t.end });
-  st.set({ asking: { path: t.path, side: t.side, start: t.start, end: t.end }, peek: null });
+  void nav.goTo(index, t.side, t.end);
+  st.set({ asking: { path: t.path, side: t.side, start: t.start, end: t.end, thread: t.id }, peek: null });
 }
 
 /** Opens the ask box on the selected lines (or the cursor's line). */
@@ -87,14 +106,21 @@ export function startAsk() {
 }
 
 /** Sends the question; a follow-up continues the same conversation. */
-export async function ask(question: string) {
-  const at = st.get().asking;
-  if (!at || !question.trim()) return;
+export async function ask(question: string, lines = st.get().asking) {
+  if (!lines || !question.trim()) return;
+  // A question here is about these lines now, not a reopened conversation from before.
+  const at = { path: lines.path, side: lines.side, start: lines.start, end: lines.end };
+  if (st.get().asking?.thread) st.set({ asking: at });
   // A follow-up continues the lines' conversation, even one from earlier in the review.
   const prev = st.get().job;
   const followUp =
     st.threadAt(at)?.sessionId ??
-    (prev?.kind === "ask" && prev.at && prev.at.path === at.path && prev.at.start === at.start && prev.at.end === at.end
+    (prev?.kind === "ask" &&
+    prev.at &&
+    prev.at.path === at.path &&
+    prev.at.start === at.start &&
+    prev.at.end === at.end &&
+    !st.get().asks.some((t) => t.outdated && t.sessionId === prev.sessionId)
       ? prev.sessionId
       : null);
   try {

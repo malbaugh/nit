@@ -5,6 +5,7 @@ import type {
 } from "@octokit/graphql-schema";
 import { $ } from "bun";
 import { Octokit } from "octokit";
+import { childEnv } from "./child-env";
 import { parseRemote, type Repo } from "./git";
 import type { Draft, GitHubState, PostResult, PullRequest, ReviewEvent, Thread } from "./types";
 
@@ -12,14 +13,9 @@ export { parseRemote };
 
 const out = async (p: ReturnType<typeof $>) => (await p.nothrow().quiet().text()).trim();
 
-// GitHub tokens nit never takes from its environment: Bun loads the reviewed repo's .env files, so
-// they may be that repo's. gh reads them too (ahead of its own login), so it doesn't see them.
-const ENV_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
-export function ghEnv() {
-  const env: Record<string, string | undefined> = { ...process.env };
-  for (const k of ENV_TOKENS) delete env[k];
-  return env;
-}
+// gh reads GH_TOKEN, GITHUB_TOKEN and GH_CONFIG_DIR ahead of its own login, and Bun loads the
+// reviewed repo's .env into nit's environment: gh gets only the basics (child-env.ts).
+export const ghEnv = childEnv;
 const secret = (host: string) => ({ service: "nit", name: `github-token:${host}` });
 
 /** A token saved in nit for `host` (your OS keychain), or null. */

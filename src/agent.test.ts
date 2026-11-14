@@ -75,3 +75,29 @@ test("an API error says what to do; normal messages aren't failures", () => {
   expect(failureOf({ type: "result", subtype: "success", is_error: false, result: "ok" } as unknown as M)).toBeNull();
   expect(failureOf({ type: "assistant", message: { content: [] } } as unknown as M)).toBeNull();
 });
+
+test("Glob patterns and Grep globs that reach outside the checkout are refused", async () => {
+  const hook = confineTo(root);
+  const decide = async (tool: string, input: Record<string, unknown>) =>
+    (
+      (await hook(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: tool,
+          tool_input: input,
+          tool_use_id: "t",
+          session_id: "s",
+          transcript_path: "",
+          cwd: root,
+        } as Parameters<ReturnType<typeof confineTo>>[0],
+        "t",
+        { signal: new AbortController().signal },
+      )) as { hookSpecificOutput?: { permissionDecision?: string } }
+    ).hookSpecificOutput?.permissionDecision ?? "allow";
+  expect(await decide("Glob", { pattern: "/etc/*" })).toBe("deny");
+  expect(await decide("Glob", { pattern: "../other/**/*.ts" })).toBe("deny");
+  expect(await decide("Grep", { pattern: "secret", glob: "/Users/me/.ssh/*" })).toBe("deny");
+  expect(await decide("Glob", { pattern: "src/**/*.ts" })).toBe("allow");
+  expect(await decide("Glob", { pattern: "/repo/src/*.ts" })).toBe("allow");
+  expect(await decide("Grep", { pattern: "/etc/passwd" })).toBe("allow"); // a regex, not a path
+});

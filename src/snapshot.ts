@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { $ } from "bun";
 import { dataDir } from "./store";
@@ -17,6 +17,9 @@ export function createSnapshots(root: string, project: string) {
     project,
     new Bun.CryptoHasher("sha1").update(root).digest("hex").slice(0, 16),
   );
+  // Snapshots from before this name (Bun.hash) move over, so an earlier pass can still be undone.
+  const before = join(dataDir(), "snapshot", project, Bun.hash(root).toString(36));
+  if (!existsSync(dir) && existsSync(before)) renameSync(before, dir);
   // Only these variables: an inherited GIT_DIR or GIT_INDEX_FILE would point git at the real repo.
   const env: Record<string, string | undefined> = {
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))),

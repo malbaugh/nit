@@ -287,6 +287,19 @@ export async function proposals(
   return { drafts: kept, dropped };
 }
 
+/**
+ * Where `anchor` (some lines' text) now starts in `lines`, 1-based: the match nearest `near`, or
+ * null when the file no longer has those lines. Trailing whitespace doesn't count.
+ */
+export function locateLines(lines: string[], anchor: string[], near: number): number | null {
+  if (!anchor.length) return null;
+  const same = (i: number) => anchor.every((a, k) => (lines[i + k] ?? "").trimEnd() === a.trimEnd());
+  let best: number | null = null;
+  for (let i = 0; i + anchor.length <= lines.length; i++)
+    if (same(i) && (best === null || Math.abs(i + 1 - near) < Math.abs(best - near))) best = i + 1;
+  return best;
+}
+
 /** The co-review prompt: the change, its files, and the project's guidelines. */
 export function reviewPrompt(o: {
   patch: string;

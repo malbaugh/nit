@@ -53,7 +53,12 @@ export function changedPaths(patch: string) {
 /** Reads many blobs at `ref` in one git process. Missing paths come back undefined. */
 // Keyed by commit sha, so entries never go stale. ponytail: unbounded, but one review reads a few dozen files.
 const blobs = new Map<string, string | null>();
-const trees = new Map<string, Promise<string[]>>();
+const trees = new Map<string, Promise<string[] | null>>();
+/** Forgets what was read at a ref that isn't a commit (a branch name), so it's read again. */
+function clearFor(ref: string) {
+  trees.delete(ref);
+  for (const k of blobs.keys()) if (k.startsWith(`${ref}:`)) blobs.delete(k);
+}
 
 async function readAll(root: string, sha: string, paths: string[]) {
   const got = new Map<string, string>();
@@ -111,19 +116,24 @@ const ancestors = (path: string) => {
 
 export async function loadGuidelines(root: string, ref: string, changed: string[]): Promise<Guidelines> {
   // The branch can move during a session; its commit can't, so everything below is cached by sha.
-  const sha =
-    (await $`git rev-parse --verify --quiet ${`${ref}^{commit}`}`.cwd(root).nothrow().quiet().text()).trim() || ref;
-  if (!trees.has(sha))
-    trees.set(
-      sha,
-      $`git ls-tree -r --name-only ${sha}`
-        .cwd(root)
-        .nothrow()
-        .quiet()
-        .text()
-        .then((t) => t.split("\n")),
-    );
-  const tree = await trees.get(sha)!;
+  const resolved = (
+    await $`git rev-parse --verify --quiet ${`${ref}^{commit}`}`.cwd(root).nothrow().quiet().text()
+  ).trim();
+  // Only a commit is immutable: a ref that didn't resolve is read fresh and never cached.
+  const sha = resolved || ref;
+  const cache = !!resolved;
+  if (!cache) clearFor(sha);
+  let listing = trees.get(sha);
+  if (!listing) {
+    listing = $`git ls-tree -r --name-only ${sha}`
+      .cwd(root)
+      .nothrow()
+      .quiet()
+      .then((r) => (r.exitCode === 0 ? r.text().split("\n") : null));
+    if (cache) trees.set(sha, listing);
+  }
+  const tree = (await listing) ?? [];
+  if (cache && !(await listing)) trees.delete(sha); // a failed listing isn't kept either
   const exists = new Set(tree);
   // depth = how narrowly a guideline targets these files (directory depth, or a glob's literal
   // depth); its rank weighs that by how much of the change it covers. The root is always first.

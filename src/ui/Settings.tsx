@@ -271,7 +271,7 @@ function Claude() {
           <KeyField
             label="Anthropic API key"
             placeholder="sk-ant-…"
-            missing="No key saved yet: Claude runs will fail until you add one."
+            missing="No key saved yet: Claude runs stop until you add one."
             saved={!!auth?.hasKey}
             store={async (key) => {
               const { hasKey } = await api.saveClaudeKey(key);

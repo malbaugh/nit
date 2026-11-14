@@ -108,6 +108,19 @@ export function confineTo(root: string, opts: { guidelinesFromBase?: boolean } =
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") return {};
     const args = (input.tool_input ?? {}) as Record<string, unknown>;
+    // Glob's pattern and Grep's glob can name a directory too ("/etc/*", "../x/**"): the part
+    // before the first wildcard is checked like any path.
+    const pattern = input.tool_name === "Glob" ? args.pattern : input.tool_name === "Grep" ? args.glob : undefined;
+    const fixed = typeof pattern === "string" ? pattern.split(/[*?[{]/)[0] : "";
+    const patternDir = isAbsolute(fixed) || fixed.split("/").includes("..") ? fixed || "/" : "";
+    if (patternDir && !within(root, patternDir))
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: `nit only allows files inside the review checkout (${root}), not ${pattern}.`,
+        },
+      };
     for (const key of ["file_path", "path", "notebook_path"]) {
       const p = args[key];
       if (typeof p !== "string" || !p) continue;
@@ -156,7 +169,13 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
   let keyed = false;
   const usingKey = () => keyed;
   const decideKey = async () => {
-    keyed = prefsOf(store).auth === "apiKey" && !!(await savedKey());
+    const wantsKey = prefsOf(store).auth === "apiKey";
+    keyed = wantsKey && !!(await savedKey());
+    // Asked for an API key and there's none: say so, rather than quietly using the login.
+    if (wantsKey && !keyed)
+      throw new Error(
+        "Settings → Claude is set to sign in with an API key, but none is saved. Add one there, or switch back to the Claude Code login.",
+      );
   };
   let current: { run: AgentRun; abort: AbortController; events: AgentEvent[] } | null = null;
   const listeners = new Set<(e: AgentEvent) => void>();

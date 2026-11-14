@@ -14,6 +14,7 @@ import {
   FINDINGS_SCHEMA,
   type Finding,
   fileDiff,
+  locateLines,
   proposals,
   REVIEW_INSTRUCTIONS,
   reviewPrompt,
@@ -197,6 +198,27 @@ function parseDraft(v: unknown): Draft | null {
   };
 }
 
+/**
+ * Conversations follow their lines when the file changes (an edit, Claude applying comments): a
+ * thread moves to where its lines' text now is, or, when they're gone, becomes outdated. Removed
+ * lines live in the merge base, which never changes.
+ */
+async function placeAsks(): Promise<AskThread[]> {
+  const threads = store.asks();
+  const files = new Map<string, string[] | null>();
+  for (const t of threads) {
+    if (t.outdated || t.side !== "additions" || !t.anchor?.length) continue;
+    if (!files.has(t.path)) files.set(t.path, (await git.readWorking(root, t.path))?.split("\n") ?? null);
+    const lines = files.get(t.path);
+    const at = lines ? locateLines(lines, t.anchor, t.start) : null;
+    if (at === t.start) continue;
+    const moved = at === null ? { ...t, outdated: true } : { ...t, start: at, end: at + t.end - t.start };
+    store.saveAsk(moved);
+    Object.assign(t, moved);
+  }
+  return threads;
+}
+
 async function applySuggestion(d: Draft) {
   if (d.side !== "additions" || d.suggestion === null) return fail(400, "not a suggestion");
   const text = await git.readWorking(root, d.path);
@@ -234,7 +256,7 @@ const serve = (p: number) =>
             patch: await patch(),
             drafts: store.drafts(),
             viewed: store.viewed(),
-            asks: store.asks(),
+            asks: await placeAsks(),
           };
           return json(data);
         }),
@@ -479,12 +501,13 @@ const serve = (p: number) =>
           const whole = await patch();
           const guidelines = await loadGuidelines(root, base, [b.path]);
           const at = { path: b.path, side, start, end } as const;
+          const selected = text.split("\n").slice(start - 1, end);
           try {
             const job = await agent.runJob("ask", {
               prompt: askPrompt({
                 question: b.question,
                 ...at,
-                lines: text.split("\n").slice(start - 1, end),
+                lines: selected,
                 fileDiff: fileDiff(whole, b.path),
                 guidelines,
               }),
@@ -497,14 +520,16 @@ const serve = (p: number) =>
               // Kept with the lines' conversation, so it can be read again later in the review.
               finish: async (_, j) => {
                 if (!j.answer.trim()) return;
+                // An outdated conversation isn't continued: these lines start a new one.
                 const same = (t: AskThread) =>
-                  t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end;
+                  !t.outdated && t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end;
                 const t: AskThread = store.asks().find(same) ?? {
                   id: crypto.randomUUID(),
                   ...at,
                   turns: [],
                   sessionId: null,
                   updatedAt: 0,
+                  anchor: selected,
                 };
                 const now = Date.now();
                 store.saveAsk({
@@ -520,6 +545,9 @@ const serve = (p: number) =>
             return fail(409, e instanceof Error ? e.message : String(e));
           }
         }),
+      },
+      "/api/asks": {
+        GET: guarded(async () => json(await placeAsks())),
       },
       "/api/asks/:id": {
         DELETE: guarded((req) => {

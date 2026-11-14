@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Finding, hunkRanges, proposals } from "./coreview";
+import { type Finding, hunkRanges, locateLines, proposals } from "./coreview";
 import type { Guidelines } from "./guidelines";
 
 const file = [
@@ -120,4 +120,13 @@ test("evidence keeps path:line only; a bare file name resolves to its one repo p
     { ...ctx, files: ["src/pay.ts", "src/checkout.ts", "a/util.ts", "b/util.ts"] },
   );
   expect(drafts[0].proposal?.evidence).toEqual(["src/checkout.ts:12-14", "src/pay.ts:4"]);
+});
+
+test("a conversation's lines are found where they moved, the nearest copy wins, gone is null", () => {
+  const file = ["a", "x", "y", "b", "x", "y", "c"];
+  expect(locateLines(file, ["x", "y"], 2)).toBe(2); // unchanged
+  expect(locateLines(file, ["x", "y"], 6)).toBe(5); // nearest of two copies
+  expect(locateLines(["new", ...file], ["b"], 4)).toBe(5); // moved down a line
+  expect(locateLines(file, ["x  "], 2)).toBe(2); // trailing whitespace doesn't count
+  expect(locateLines(file, ["gone"], 2)).toBeNull();
 });

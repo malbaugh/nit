@@ -54,6 +54,10 @@ export type AskThread = {
   /** Claude's session, so a follow-up continues the same conversation. */
   sessionId: string | null;
   updatedAt: number;
+  /** The lines' text when asked, to follow them when the file changes. */
+  anchor: string[];
+  /** The lines are gone from the file: kept to read, but no longer placed or continued. */
+  outdated?: boolean;
 };
 
 export type FileContents = { old: string | null; new: string | null };

@@ -156,6 +156,7 @@ export function AgentPanel() {
                           <span className="truncate font-mono text-[11.5px] text-ink-3">
                             {t.path}:{t.start === t.end ? t.start : `${t.start}-${t.end}`}
                             {t.turns.length > 1 ? ` · ${t.turns.length} questions` : ""}
+                            {t.outdated ? " · lines changed" : ""}
                           </span>
                         </button>
                       ))}

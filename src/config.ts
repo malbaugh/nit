@@ -118,14 +118,47 @@ export async function saveUserCommands(patch: Partial<Record<Command, string | n
   );
 }
 
+/**
+ * Puts values into a shell command's `{name}` placeholders, escaped for where each one sits:
+ * inside "double quotes", inside 'single quotes', or bare (then single-quoted). So `zed {file}`,
+ * `cursor -g "{file}:{line}"` and `vim '{file}'` all pass the path as one argument.
+ */
+export function fillCommand(cmd: string, values: Record<string, string>) {
+  let out = "";
+  let quote: "'" | '"' | null = null;
+  for (let i = 0; i < cmd.length; ) {
+    const name = /^\{(\w+)\}/.exec(cmd.slice(i))?.[1];
+    if (name && name in values) {
+      const v = values[name];
+      out +=
+        quote === '"'
+          ? v.replace(/[\\"$`]/g, "\\$&")
+          : quote === "'"
+            ? v.replaceAll("'", "'\\''")
+            : `'${v.replaceAll("'", "'\\''")}'`;
+      i += name.length + 2;
+      continue;
+    }
+    const ch = cmd[i];
+    if (ch === "\\" && quote !== "'") {
+      out += cmd.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    if ((ch === "'" || ch === '"') && (quote === null || quote === ch)) quote = quote ? null : ch;
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 /** Opens a file at a line in your editor: the editor command, else VS Code, else the OS's default app. */
 export async function openInEditor(root: string, file: string, line: number) {
   const configured = (await loadCommands(root)).editor?.run;
-  const quoted = `'${file.replaceAll("'", "'\\''")}'`;
   const run =
     configured ??
     (Bun.which("code") ? "code --goto {file}:{line}" : `${process.platform === "darwin" ? "open" : "xdg-open"} {file}`);
-  const cmd = run.replaceAll("{file}", quoted).replaceAll("{line}", String(line));
+  const cmd = fillCommand(run, { file, line: String(line) });
   const proc = Bun.spawn(["sh", "-c", cmd], { cwd: root, stdout: "ignore", stderr: "pipe" });
   // An editor that stays open (a -w flag) counts as opened after a moment.
   const code = await Promise.race([proc.exited, Bun.sleep(3000).then(() => 0)]);

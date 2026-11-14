@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { claudeEnv, claudeOptions, PrefsPatch } from "./prefs";
+import { claudeEnv, claudeOptions, PrefsPatch, prefsOf } from "./prefs";
 import { DEFAULT_PREFS } from "./types";
 
 test("model and effort reach the SDK only when set; nit's runs never load your connectors or memory", async () => {
@@ -34,9 +34,17 @@ test("Claude never gets a credential from nit's environment (a repo's .env); it 
   }
 });
 
-test("the settings screen can't save unknown keys or bad values", () => {
+test("the settings screen can't save bad values; unknown keys are dropped, not saved", () => {
   expect(PrefsPatch.safeParse({ wrap: true, fontSize: 14 }).success).toBe(true);
   expect(PrefsPatch.safeParse({ model: "gpt" }).success).toBe(false);
   expect(PrefsPatch.safeParse({ fontSize: 40 }).success).toBe(false);
-  expect(PrefsPatch.safeParse({ checkout: "rm -rf /" }).success).toBe(false);
+  expect(PrefsPatch.parse({ wrap: true, checkout: "rm -rf /" })).toEqual({ wrap: true });
+});
+
+test("one stale or broken saved field falls back alone; the rest are kept", () => {
+  const store = {
+    setting: () => ({ wrap: true, model: "sonnet", apiKey: true, fontSize: 99 }),
+  } as unknown as Parameters<typeof prefsOf>[0];
+  const p = prefsOf(store);
+  expect([p.wrap, p.model, p.fontSize]).toEqual([true, "sonnet", DEFAULT_PREFS.fontSize]);
 });

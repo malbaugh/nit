@@ -98,7 +98,8 @@ export type State = {
   /** Claude's co-review or question in progress, or the last one. */
   job: Job | null;
   /** The lines an "Ask Claude" box is open on, before (or between) questions. */
-  asking: { path: string; side: Side; start: number; end: number } | null;
+  /** The ask box's lines; `thread` shows that conversation (one reopened from the list). */
+  asking: { path: string; side: Side; start: number; end: number; thread?: string } | null;
   /** "agent" shows only the last pass's changes instead of the review's diff. */
   view: "review" | "agent";
   /** A draft's lines being edited in the diff to make its suggestion (suggest.ts). */
@@ -444,10 +445,12 @@ export function setPrefs(patch: Partial<Prefs>) {
   );
 }
 
-/** The conversation about exactly these lines, if there is one. */
+/** The current conversation about exactly these lines, if there is one (outdated ones aren't). */
 export function threadAt(at: { path: string; side: Side; start: number; end: number } | null) {
   return at
-    ? state.asks.find((t) => t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end)
+    ? state.asks.find(
+        (t) => !t.outdated && t.path === at.path && t.side === at.side && t.start === at.start && t.end === at.end,
+      )
     : undefined;
 }
 

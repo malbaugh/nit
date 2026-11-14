@@ -23,8 +23,14 @@ const width = () => Math.max(40, process.stdout.columns ?? 80);
 const fit = (s: string, room: number) => (s.length > room ? `${s.slice(0, room - 1)}…` : s);
 
 /** A step on the way to the review, dim: "· creating a worktree at …". */
-export const step = (msg: string) => out(`  ${c.dim(`· ${msg}`)}`);
-export const warn = (msg: string) => out(`  ${c.yellow("!")} ${msg}`);
+export const step = (msg: string) => print(`  ${c.dim(`· ${msg}`)}`);
+const warned = new Set<string>();
+/** A warning, once per run: config is re-read often (settings, opening the editor). */
+export const warn = (msg: string) => {
+  if (warned.has(msg)) return;
+  warned.add(msg);
+  print(`  ${c.yellow("!")} ${msg}`);
+};
 
 /** Stops nit with one red line saying what went wrong and what to do. */
 export function fail(msg: string): never {
@@ -64,6 +70,13 @@ export function log(msg: string, detail: string[] = []) {
   clearFooter();
   out(`  ${c.dim(clock())}  ${msg}`);
   for (const d of detail) out(`         ${d}`);
+  redraw();
+}
+
+/** A plain line above the status line (it's cleared first and drawn again after). */
+function print(line: string) {
+  clearFooter();
+  out(line);
   redraw();
 }
 

@@ -53,7 +53,10 @@ export function AskAnnotation() {
   const at = st.useStore((s) => s.asking);
   const job = st.useStore((s) => s.job);
   const activity = st.useStore((s) => s.agentActivity);
-  const thread = st.useStore((s) => (s.asking ? st.threadAt(s.asking) : undefined));
+  // A conversation reopened from the list (maybe outdated), else the current one on these lines.
+  const thread = st.useStore((s) =>
+    s.asking?.thread ? s.asks.find((t) => t.id === s.asking?.thread) : s.asking ? st.threadAt(s.asking) : undefined,
+  );
   const [text, setText] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -143,6 +146,11 @@ export function AskAnnotation() {
 
         {talked ? (
           <div className="max-h-[60vh] overflow-y-auto px-3.5 pb-3">
+            {thread?.outdated ? (
+              <p className="mb-2 rounded-control bg-orange-tint px-2.5 py-1.5 text-[12px] text-ink-2">
+                These lines have changed since. A follow-up starts a new conversation about them as they are now.
+              </p>
+            ) : null}
             {thread?.turns.map((t) => (
               <Turn key={t.at} question={t.question} answer={t.answer} />
             ))}

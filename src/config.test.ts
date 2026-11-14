@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandSettings, loadCommands, saveUserCommands } from "./config";
+import { commandSettings, fillCommand, loadCommands, saveUserCommands } from "./config";
 
 // A bare "origin" whose default branch has the team's .nit.toml, a clone to review in, and a
 // private XDG_CONFIG_HOME for the user's own config.
@@ -111,4 +111,17 @@ test("the settings screen edits your config file; the team's command still wins 
   } finally {
     await Bun.write(file, before);
   }
+});
+
+test("an editor command gets the path as one argument however the placeholder is quoted", () => {
+  const file = `/tmp/a dir/it's "$x" \`y\`.ts`;
+  const args = (cmd: string) =>
+    Bun.spawnSync(["sh", "-c", fillCommand(cmd, { file, line: "12" })])
+      .stdout.toString()
+      .split("\0")
+      .slice(0, -1);
+  expect(args("printf '%s\\0' {file}:{line}")).toEqual([`${file}:12`]);
+  expect(args(`printf '%s\\0' "{file}:{line}"`)).toEqual([`${file}:12`]);
+  expect(args("printf '%s\\0' '{file}'")).toEqual([file]);
+  expect(args(`printf '%s\\0' --goto "{file}" -l {line}`)).toEqual(["--goto", file, "-l", "12"]);
 });

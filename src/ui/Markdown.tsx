@@ -18,27 +18,31 @@ type HastNode = {
   type: string;
   value?: string;
   tagName?: string;
-  properties?: { className?: unknown; align?: unknown };
+  properties?: { className?: unknown; align?: unknown; id?: unknown; start?: unknown; dir?: unknown };
   children?: HastNode[];
 };
 const hastText = (n: HastNode): string =>
   n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(hastText).join("");
 
 // Streamdown draws these with its own markup (strong as a <span>, tables in wrappers) and its
-// classes; nit wants the plain elements with the Markdown's own classes (GitHub's
-// contains-task-list, task-list-item), which its .md styles expect.
+// classes; nit wants the plain elements with the Markdown's own attributes: GitHub's
+// contains-task-list / task-list-item classes (the .md styles expect them), an ordered list's
+// start, footnote ids, a table column's :--: alignment.
 const PLAIN = ["strong", "em", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "blockquote"] as const;
 const plain = Object.fromEntries(
   PLAIN.map((tag) => [
     tag,
     ({ node, children }: { node?: HastNode; children?: ReactNode }) => {
-      const own = node?.properties?.className;
-      const align = node?.properties?.align; // a table column's :--: alignment
+      const p = node?.properties ?? {};
+      const align = typeof p.align === "string" ? (p.align as "left" | "center" | "right") : undefined;
       return createElement(
         tag,
         {
-          className: Array.isArray(own) ? own.join(" ") : undefined,
-          style: typeof align === "string" ? { textAlign: align as "left" | "center" | "right" } : undefined,
+          className: Array.isArray(p.className) ? p.className.join(" ") : undefined,
+          id: typeof p.id === "string" ? p.id : undefined,
+          start: typeof p.start === "number" ? p.start : undefined,
+          dir: typeof p.dir === "string" ? p.dir : undefined,
+          style: align ? { textAlign: align } : undefined,
         },
         children,
       );

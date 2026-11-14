@@ -22,7 +22,11 @@ const keyOf = (s: st.State["search"]) => `${s.regex ? 1 : 0}${s.caseSensitive ? 
 /** Groups matches by file and merges matches whose surrounding lines touch into one excerpt. */
 function excerpts(matches: SearchMatch[]) {
   const byFile = new Map<string, SearchMatch[]>();
-  for (const m of matches) byFile.set(m.path, [...(byFile.get(m.path) ?? []), m]);
+  for (const m of matches) {
+    const list = byFile.get(m.path);
+    if (list) list.push(m);
+    else byFile.set(m.path, [m]);
+  }
   const groups: { path: string; count: number; excerpts: number }[] = [];
   const all: Excerpt[] = [];
   const flat: SearchMatch[] = [];

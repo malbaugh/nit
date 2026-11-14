@@ -246,6 +246,9 @@ async function goToLine(index: number, side: Side, line: number, record = true) 
   st.set({ cursor: { side, line }, anchor: null, peek: null, focused: null });
 }
 
+/** Goes to a line on either side of a file in the review (a removed line is on the old side). */
+export const goTo = (index: number, side: Side, line: number) => goToLine(index, side, line);
+
 /** Moves to a location: in the review's diff when the file is part of it, else read-only. */
 export function openLocation(loc: { path: string; line: number }) {
   const index = st.get().files.findIndex((f) => f.name === loc.path);
