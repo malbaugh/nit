@@ -4,6 +4,23 @@ import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from "react";
 import { keyLabel } from "./actions";
 
+/** Subsequence match; lower is better, null is no match. Contiguous and prefix hits win. */
+export function score(query: string, text: string) {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  const t = text.toLowerCase();
+  let at = -1;
+  let gaps = 0;
+  for (const ch of q) {
+    const next = t.indexOf(ch, at + 1);
+    if (next === -1) return null;
+    gaps += next - at - 1;
+    at = next;
+  }
+  const contiguous = t.indexOf(q);
+  return gaps + (contiguous === -1 ? 0 : -100 - (contiguous === 0 ? 50 : 0));
+}
+
 export const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 export const dirname = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/") + 1) : "");
 

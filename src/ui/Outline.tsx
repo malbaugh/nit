@@ -3,7 +3,7 @@ import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { Kbd, TextSegmented } from "./ui";
+import { Kbd, score, TextSegmented } from "./ui";
 
 /** One letter per kind, coloured quietly so the names stay the focus. */
 const KIND: Record<string, { letter: string; tone: string }> = {
@@ -71,6 +71,7 @@ export function OutlinePanel() {
     [browseLine, reviewCursor],
   );
   const [onlyChanged, setOnlyChanged] = useState(false);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     if (file) nav.loadOutline(file.name, file.prevName);
@@ -87,7 +88,15 @@ export function OutlinePanel() {
   }, [file, outline]);
 
   const here = cursor?.side === "additions" ? nav.enclosing(outline?.new, cursor.line).at(-1) : undefined;
-  const rows = view ? (onlyChanged ? view.all.filter((e) => e.status) : view.all) : [];
+  const shown = view ? (onlyChanged ? view.all.filter((e) => e.status) : view.all) : [];
+  // Filtering flattens the tree and ranks by match, as the palette does.
+  const rows = filter.trim()
+    ? shown
+        .map((e) => ({ e, s: score(filter.trim(), e.name) }))
+        .filter((x): x is { e: Entry; s: number } => x.s !== null)
+        .sort((a, b) => a.s - b.s)
+        .map((x) => ({ ...x.e, depth: 0 }))
+    : shown;
 
   return (
     <aside
@@ -118,6 +127,24 @@ export function OutlinePanel() {
         />
       </div>
 
+      <div className="shrink-0 px-2.5 pt-1.5 pb-1">
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && rows[0]) void nav.revealSymbol(rows[0], "additions");
+            else if (e.key === "Escape" && filter) setFilter("");
+            else if (e.key === "Escape") e.currentTarget.blur();
+            else return;
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          placeholder="Filter symbols"
+          aria-label="Filter symbols"
+          spellCheck={false}
+          className="h-7 w-full rounded-control bg-field px-2.5 text-[12.5px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
+        />
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
         {!outline ? <p className="px-2 py-2 text-[12px] text-ink-3">Reading symbols…</p> : null}
         {outline && !outline.new && !outline.old ? (
@@ -131,7 +158,10 @@ export function OutlinePanel() {
             side="additions"
           />
         ))}
-        {view && onlyChanged && !rows.length ? (
+        {view && filter.trim() && !rows.length ? (
+          <p className="px-2 py-2 text-[12px] text-ink-3">No symbol matches “{filter.trim()}”.</p>
+        ) : null}
+        {view && onlyChanged && !filter.trim() && !rows.length ? (
           <p className="px-2 py-2 text-[12px] text-ink-3">No symbols changed in this file.</p>
         ) : null}
         {view?.removed.length ? (

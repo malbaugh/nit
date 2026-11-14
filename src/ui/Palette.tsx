@@ -5,7 +5,7 @@ import { actions, available } from "./actions";
 import { stats } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { basename, dirname, Kbd } from "./ui";
+import { basename, dirname, Kbd, score } from "./ui";
 
 type Item = {
   id: string;
@@ -17,23 +17,6 @@ type Item = {
   icon: ReactNode;
   run: () => void;
 };
-
-/** Subsequence match; lower is better, null is no match. Contiguous and prefix hits win. */
-function score(query: string, text: string) {
-  if (!query) return 0;
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  let at = -1;
-  let gaps = 0;
-  for (const ch of q) {
-    const next = t.indexOf(ch, at + 1);
-    if (next === -1) return null;
-    gaps += next - at - 1;
-    at = next;
-  }
-  const contiguous = t.indexOf(q);
-  return gaps + (contiguous === -1 ? 0 : -100 - (contiguous === 0 ? 50 : 0));
-}
 
 export function Palette() {
   const mode = st.useStore((s) => s.palette);
