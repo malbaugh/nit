@@ -1,4 +1,6 @@
-# nit
+<p align="center"><img src="https://raw.githubusercontent.com/sidwebworks/nit/main/docs/logo/icon.svg" width="96" height="96" alt=""></p>
+
+<h1 align="center">nit</h1>
 
 A keyboard-first code review tool that runs on your machine, with Claude as a second reader.
 
