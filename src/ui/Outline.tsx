@@ -3,7 +3,7 @@ import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { Kbd, score, TextSegmented } from "./ui";
+import { Kbd, Resizer, score, TextSegmented } from "./ui";
 
 /** One letter per kind, coloured quietly so the names stay the focus. */
 const KIND: Record<string, { letter: string; tone: string }> = {
@@ -72,6 +72,7 @@ export function OutlinePanel() {
   );
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [filter, setFilter] = useState("");
+  const width = st.useStore((s) => s.widths.outline);
 
   useEffect(() => {
     if (file) nav.loadOutline(file.name, file.prevName);
@@ -100,9 +101,19 @@ export function OutlinePanel() {
 
   return (
     <aside
-      className="flex min-h-0 w-[248px] shrink-0 flex-col bg-canvas shadow-[-1px_0_0_var(--line)]"
+      className="relative flex min-h-0 shrink-0 flex-col bg-canvas shadow-[-1px_0_0_var(--line)]"
+      style={{ width }}
       aria-label="Outline"
     >
+      <Resizer
+        edge="left"
+        label="Resize the outline"
+        value={width}
+        min={200}
+        max={st.maxWidth("outline")}
+        onChange={(px) => st.setWidth("outline", px)}
+        onReset={() => st.setWidth("outline", st.DEFAULT_WIDTHS.outline)}
+      />
       <header className="flex h-12 shrink-0 items-center gap-2 px-3.5">
         <span className="text-[13px] font-medium text-ink">Outline</span>
         {view ? <span className="text-[12px] text-ink-3 tabular-nums">{view.all.length}</span> : null}

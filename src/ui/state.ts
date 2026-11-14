@@ -6,6 +6,11 @@ import { type Row, rows, treeOrder } from "./lines";
 import { toasts } from "./toasts";
 
 export type Point = { side: Side; line: number };
+/** Side panel widths in px; saved in nit's database so every repo and reload keeps them. */
+export type Widths = { files: number; outline: number };
+export const DEFAULT_WIDTHS: Widths = { files: 272, outline: 248 };
+const savedWidths = (globalThis as { nitLayout?: Partial<Widths> | null }).nitLayout ?? null;
+
 /** A file outside the review, opened read-only from a definition or reference. */
 export type Browse = { path: string; line: number; lines: number };
 export type Style = "split" | "unified";
@@ -56,6 +61,7 @@ type State = {
   settingsOpen: boolean;
   searchOpen: boolean;
   browse: Browse | null;
+  widths: Widths;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
   /** Files shown whole (every unchanged line expanded), by path. */
@@ -100,6 +106,7 @@ let state: State = {
   settingsOpen: false,
   searchOpen: false,
   browse: null,
+  widths: { ...DEFAULT_WIDTHS, ...savedWidths },
   github: null,
   fullFiles: new Set(),
 };
@@ -648,4 +655,18 @@ export async function setFullFile(path: string, full: boolean) {
   });
   // Folding back can hide the cursor's line.
   if (!full && rowIndex(fileRows(), state.cursor) === -1) resetCursor();
+}
+
+/** A panel can grow until the diff between them would drop below 480px. */
+export function maxWidth(panel: keyof Widths) {
+  const other =
+    panel === "files" ? (state.outlineOpen ? state.widths.outline : 0) : state.sidebar ? state.widths.files : 0;
+  return Math.max(200, Math.min(640, window.innerWidth - other - 480));
+}
+
+let saveWidths: ReturnType<typeof setTimeout> | undefined;
+export function setWidth(panel: keyof Widths, px: number) {
+  set((s) => ({ widths: { ...s.widths, [panel]: Math.round(px) } }));
+  clearTimeout(saveWidths);
+  saveWidths = setTimeout(() => api.saveLayout(state.widths).catch(() => {}), 400);
 }

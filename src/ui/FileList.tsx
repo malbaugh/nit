@@ -3,9 +3,10 @@ import { useMemo } from "react";
 import { ChangedTree } from "./ChangedTree";
 import { SettingsButton } from "./Settings";
 import * as st from "./state";
-import { IconButton, Kbd, ProgressRing } from "./ui";
+import { IconButton, Kbd, ProgressRing, Resizer } from "./ui";
 
 export function FileList() {
+  const width = st.useStore((s) => s.widths.files);
   const files = st.useStore((s) => s.files);
   const viewed = st.useStore((s) => s.viewed);
   const drafts = st.useStore((s) => s.drafts);
@@ -14,7 +15,16 @@ export function FileList() {
   const done = useMemo(() => files.reduce((n, f) => n + (viewed.has(f.name) ? 1 : 0), 0), [files, viewed]);
 
   return (
-    <aside className="flex min-h-0 w-[272px] shrink-0 flex-col bg-canvas shadow-[1px_0_0_var(--line)]">
+    <aside className="relative flex min-h-0 shrink-0 flex-col bg-canvas shadow-[1px_0_0_var(--line)]" style={{ width }}>
+      <Resizer
+        edge="right"
+        label="Resize the file tree"
+        value={width}
+        min={200}
+        max={st.maxWidth("files")}
+        onChange={(px) => st.setWidth("files", px)}
+        onReset={() => st.setWidth("files", st.DEFAULT_WIDTHS.files)}
+      />
       <header className="flex h-12 shrink-0 items-center gap-2 px-3.5">
         <GitBranch className="shrink-0 text-ink-3" />
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">

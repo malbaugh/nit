@@ -235,3 +235,71 @@ export function EmptyState({ icon, title, body }: { icon: ReactNode; title: stri
     </div>
   );
 }
+
+/**
+ * Drag handle on a panel's inner edge. Drag or arrow keys resize; double-click resets.
+ * `edge` is the side of the panel the handle sits on.
+ */
+export function Resizer({
+  edge,
+  value,
+  min,
+  max,
+  onChange,
+  onReset,
+  label,
+}: {
+  edge: "left" | "right";
+  value: number;
+  min: number;
+  max: number;
+  onChange: (px: number) => void;
+  onReset: () => void;
+  label: string;
+}) {
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const sign = edge === "right" ? 1 : -1;
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a focusable splitter needs the separator role on a div
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuenow={value}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      tabIndex={0}
+      onDoubleClick={onReset}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 48 : 16;
+        if (e.key === "ArrowLeft") onChange(clamp(value - step * sign));
+        else if (e.key === "ArrowRight") onChange(clamp(value + step * sign));
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        const x0 = e.clientX;
+        const w0 = value;
+        const move = (m: PointerEvent) => onChange(clamp(w0 + (m.clientX - x0) * sign));
+        const up = () => {
+          el.removeEventListener("pointermove", move);
+          el.removeEventListener("pointerup", up);
+          el.removeEventListener("pointercancel", up);
+        };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+        el.addEventListener("pointercancel", up);
+      }}
+      className={`group/resizer absolute top-0 bottom-0 z-10 w-2 cursor-col-resize outline-none ${
+        edge === "right" ? "-right-1" : "-left-1"
+      }`}
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-100 group-hover/resizer:bg-accent group-focus-visible/resizer:bg-accent group-active/resizer:bg-accent" />
+    </div>
+  );
+}

@@ -191,7 +191,7 @@ export function DiffPane() {
             <SidebarExpand />
           </IconButton>
         ) : null}
-        <nav aria-label="File path" className="flex min-w-0 items-center gap-1 text-[13px]">
+        <nav aria-label="File path" className="flex min-w-0 items-center gap-1 overflow-hidden text-[13px]">
           {file.prevName ? (
             <span className="truncate text-ink-3" title={`Renamed from ${file.prevName}`}>
               {basename(file.prevName)} →
@@ -203,7 +203,7 @@ export function DiffPane() {
               <span className="text-line-strong">/</span>
             </span>
           ))}
-          <span className="shrink-0 font-medium text-ink">{basename(file.name)}</span>
+          <span className="min-w-[4ch] truncate font-medium text-ink">{basename(file.name)}</span>
           {scope.map((sym) => (
             <span key={`${sym.line}:${sym.name}`} className="flex min-w-0 shrink items-center gap-1 text-ink-2">
               <NavArrowRight width={12} height={12} className="shrink-0 text-ink-3" />

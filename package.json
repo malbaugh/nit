@@ -21,6 +21,7 @@
     "@pierre/trees": "1.0.0",
     "@silk-hq/components": "^0.10.2",
     "@vscode/tree-sitter-wasm": "^0.3.1",
+    "fzf": "0.5.2",
     "iconoir-react": "^7.12.2",
     "octokit": "^5.0.5",
     "react": "^19.3.1",

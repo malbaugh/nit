@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { buildUI, uiDir } from "./build";
+import { buildUI, isStale, uiDirFor } from "./build";
 import { checkoutPr, parsePrArg } from "./checkout";
 import * as git from "./git";
 import { createGitHub } from "./github";
@@ -11,6 +10,7 @@ import { themeBoot } from "./theme-boot";
 import type { Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
+const uiDir = uiDirFor(dev);
 
 const fail0 = (msg: string): never => {
   console.error(`nit: ${msg}`);
@@ -46,7 +46,7 @@ github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
 
-if (dev || !existsSync(join(uiDir, "index.html"))) await buildUI();
+if (dev || isStale(uiDir)) await buildUI(uiDir);
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const fail = (status: number, error: string) => json({ error }, status);
@@ -282,10 +282,13 @@ const serve = (p: number) =>
       },
       "/api/settings": {
         PUT: guarded(async (req) => {
-          const body = (await req.json().catch(() => null)) as { theme?: unknown } | null;
-          if (!body || typeof body.theme !== "object" || body.theme === null) return fail(400, "invalid body");
-          if (JSON.stringify(body.theme).length > 64_000) return fail(413, "too large");
-          store.setSetting("theme", body.theme);
+          // User settings shared by every review: the theme and the panel layout.
+          const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+          const keys = ["theme", "layout"].filter((k) => body && k in body);
+          if (!body || !keys.length || keys.some((k) => typeof body[k] !== "object" || body[k] === null))
+            return fail(400, "invalid body");
+          if (JSON.stringify(body).length > 64_000) return fail(413, "too large");
+          for (const k of keys) store.setSetting(k, body[k]);
           return json({ ok: true });
         }),
       },
@@ -303,12 +306,13 @@ const serve = (p: number) =>
     },
     fetch: guarded(async (req) => {
       const path = new URL(req.url).pathname;
-      if (dev && path === "/") await buildUI();
+      if (dev && path === "/") await buildUI(uiDir);
       if (path === "/") {
         // The saved theme goes in before first paint, so the page never flashes the default.
         const html = await Bun.file(join(uiDir, "index.html")).text();
-        const theme = JSON.stringify(store.setting("theme")).replaceAll("<", "\\u003c");
-        return new Response(html.replace("</head>", `<script>window.nitTheme=${theme};${themeBoot}</script></head>`), {
+        const inline = (v: unknown) => JSON.stringify(v).replaceAll("<", "\\u003c");
+        const settings = `window.nitTheme=${inline(store.setting("theme"))};window.nitLayout=${inline(store.setting("layout"))};`;
+        return new Response(html.replace("</head>", `<script>${settings}${themeBoot}</script></head>`), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

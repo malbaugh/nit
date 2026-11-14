@@ -13,7 +13,7 @@ import { basename, dirname, Kbd, Tooltip } from "./ui";
 // The last search comes back when the window reopens, as in editors.
 const last = { query: "", regex: false, caseSensitive: false };
 
-type Results = { query: string; matches: SearchMatch[]; next: string | null; regexError?: string };
+type Results = { query: string; matches: SearchMatch[]; next: string | null; regexError?: string; error?: string };
 
 /** A match's line with its hits marked; leading indentation is dropped. */
 function Line({ m }: { m: SearchMatch }) {
@@ -153,7 +153,12 @@ function SearchDialog() {
           list.current?.scrollToIndex({ index: 0 });
           setLoading(false);
         },
-        () => id === seq.current && setLoading(false),
+        (e: unknown) => {
+          if (id !== seq.current) return;
+          // Say so: an empty prompt would read as "nothing typed yet".
+          setResults({ query, matches: [], next: null, error: e instanceof Error ? e.message : String(e) });
+          setLoading(false);
+        },
       );
     }, 120);
     return () => clearTimeout(t);
@@ -218,11 +223,12 @@ function SearchDialog() {
   };
 
   const fileCount = groups.length;
-  const summary = !results
-    ? null
-    : results.matches.length
-      ? `${results.matches.length}${results.next ? "+" : ""} results in ${fileCount}${results.next ? "+" : ""} ${fileCount === 1 ? "file" : "files"}`
-      : "No results";
+  const summary =
+    !results || results.error
+      ? null
+      : results.matches.length
+        ? `${results.matches.length}${results.next ? "+" : ""} results in ${fileCount}${results.next ? "+" : ""} ${fileCount === 1 ? "file" : "files"}`
+        : "No results";
 
   return (
     <Dialog.Root open onOpenChange={(o) => !o && close()}>
@@ -314,11 +320,17 @@ function SearchDialog() {
                 />
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center gap-1 px-8 text-center">
-                  <span className="text-ink-2">{results ? "No results" : "Search every file in the repo"}</span>
+                  <span className="text-ink-2">
+                    {results?.error ? "Search failed" : results ? "No results" : "Search every file in the repo"}
+                  </span>
                   <span className="text-[12px] text-ink-3">
-                    {results
-                      ? "Try fewer words, or turn off match case."
-                      : "Start with *.tsx or apps/erp/ to narrow it."}
+                    {results?.error
+                      ? results.error === "not found"
+                        ? "This nit server is older than the page. Restart nit."
+                        : results.error
+                      : results
+                        ? "Try fewer words, or turn off match case."
+                        : "Start with *.tsx or apps/erp/ to narrow it."}
                   </span>
                 </div>
               )}

@@ -103,14 +103,14 @@ export function FilePane() {
         <IconButton label="Back" keys="Mod+[" onClick={nav.goBack}>
           <ArrowLeft />
         </IconButton>
-        <nav aria-label="File path" className="flex min-w-0 items-center gap-1 text-[13px]">
+        <nav aria-label="File path" className="flex min-w-0 items-center gap-1 overflow-hidden text-[13px]">
           {dirs.map((d, i) => (
             <span key={`${i}:${d}`} className="flex shrink items-center gap-1 truncate text-ink-3">
               <span className="truncate">{d}</span>
               <span className="text-line-strong">/</span>
             </span>
           ))}
-          <span className="shrink-0 font-medium text-ink" title={browse.path}>
+          <span className="min-w-[4ch] truncate font-medium text-ink" title={browse.path}>
             {basename(shown)}
           </span>
           {scope.map((sym) => (

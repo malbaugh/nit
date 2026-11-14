@@ -38,6 +38,7 @@ export const api = {
       `/api/search?${q({ q: query, regex: regex ? 1 : undefined, case: caseSensitive ? 1 : undefined, after })}`,
     ),
   saveTheme: (theme: unknown) => call<{ ok: true }>("PUT", "/api/settings", { theme }),
+  saveLayout: (layout: unknown) => call<{ ok: true }>("PUT", "/api/settings", { layout }),
   review: () => call<ReviewData>("GET", "/api/review"),
   file: (path: string, prev?: string) =>
     call<FileContents>("GET", `/api/file?${new URLSearchParams({ path, prev: prev ?? "" })}`),
