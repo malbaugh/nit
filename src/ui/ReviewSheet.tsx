@@ -1,7 +1,7 @@
 import { Scroll, Sheet } from "@silk-hq/components";
-import { Copy, EditPencil, OpenNewWindow, Sparks, WarningTriangle, Xmark } from "iconoir-react/regular";
-import { useMemo, useState } from "react";
-import type { Draft, ReviewEvent } from "../types";
+import { Copy, EditPencil, Lock, OpenNewWindow, Sparks, WarningTriangle, Xmark } from "iconoir-react/regular";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { AskThread, Draft, ReviewEvent } from "../types";
 import * as agent from "./agent";
 import { api } from "./api";
 import { splitLabel } from "./Comments";
@@ -27,6 +27,15 @@ const preview = (body: string) =>
     .replace(/`|\*\*|__|~~/g, "")
     .replace(/^\s*(#+|>|[-*+]( \[[ xX]\])?)\s+/, "")
     .trim();
+
+/** The start of an answer across its lines, for a two-line preview. */
+const gist = (body: string) =>
+  body
+    .split("\n")
+    .map((l) => preview(l))
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 300);
 
 function copyAll() {
   const { files } = st.get();
@@ -120,6 +129,8 @@ export function ReviewSheet() {
     }
   }
 
+  // Your comments, and beside them your conversations with Claude: kept for you, never posted.
+  const asks = st.useStore((s) => s.asks);
   const groups = useMemo(() => {
     const order = new Map(files.map((f, i) => [f.name, i]));
     const byFile = Map.groupBy(drafts, (d) => d.path);
@@ -127,6 +138,25 @@ export function ReviewSheet() {
       .sort(([a], [b]) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9))
       .map(([path, list]) => ({ path, list: list.toSorted((a, b) => a.start - b.start) }));
   }, [drafts, files]);
+  const questions = useMemo(() => {
+    const order = new Map(files.map((f, i) => [f.name, i]));
+    return asks.toSorted((a, b) => (order.get(a.path) ?? 1e9) - (order.get(b.path) ?? 1e9) || a.start - b.start);
+  }, [asks, files]);
+  // Opened from the sidebar's questions button: start at them.
+  const questionsRef = useRef<HTMLElement>(null);
+  const at = st.useStore((s) => s.reviewAt);
+  useEffect(() => {
+    if (!open || at !== "questions") return;
+    const t = setTimeout(() => {
+      const el = questionsRef.current;
+      // Scroll the list itself; scrollIntoView would also slide Silk's sheet sideways.
+      let box = el?.parentElement;
+      while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement;
+      if (el && box) box.scrollTop = el.offsetTop - 8;
+      st.set({ reviewAt: null });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [open, at]);
 
   const go = (d: Draft) => {
     st.set({ reviewOpen: false });
@@ -178,7 +208,7 @@ export function ReviewSheet() {
             <Scroll.Root className="min-h-0 flex-1">
               <Scroll.View className="h-full w-full">
                 <Scroll.Content className="box-border w-full min-w-0 p-2">
-                  {groups.length ? null : (
+                  {groups.length || questions.length ? null : (
                     <div className="flex flex-col items-center gap-1 px-6 py-16 text-center">
                       <span className="text-ink-2">No comments yet</span>
                       <span className="text-[12px] text-ink-3">
@@ -236,6 +266,24 @@ export function ReviewSheet() {
                       })}
                     </section>
                   ))}
+                  {questions.length ? (
+                    <section
+                      ref={questionsRef}
+                      className="not-first:mt-2 not-first:pt-2 not-first:shadow-[0_-1px_0_var(--line)]"
+                    >
+                      <div className="flex h-8 items-center gap-1.5 px-2 pt-1">
+                        <Sparks width={13} height={13} className="text-accent-ink" />
+                        <span className="text-[12.5px] font-medium text-ink">Your questions to Claude</span>
+                        <span className="text-[12px] text-ink-3 tabular-nums">{questions.length}</span>
+                        <span className="ml-auto flex items-center gap-1 text-[11.5px] text-ink-3">
+                          <Lock width={11} height={11} /> Only you see these
+                        </span>
+                      </div>
+                      {questions.map((t) => (
+                        <AskRow key={t.id} t={t} />
+                      ))}
+                    </section>
+                  ) : null}
                 </Scroll.Content>
               </Scroll.View>
             </Scroll.Root>
@@ -260,9 +308,9 @@ export function ReviewSheet() {
                   rows={2}
                   className="block w-full resize-none rounded-control bg-field px-3 py-2 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <TextSegmented label="Verdict" value={event} onChange={setEvent} options={VERDICTS} />
-                  <span className="ml-auto flex items-center gap-1.5">
+                  <span className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                     <IconButton label="Copy as Markdown" onClick={copyAll} side="top">
                       <Copy />
                     </IconButton>
@@ -298,5 +346,30 @@ export function ReviewSheet() {
         </Sheet.View>
       </Sheet.Portal>
     </Sheet.Root>
+  );
+}
+
+/** One conversation with Claude: the last question, the start of the answer, and where it was asked. */
+function AskRow({ t }: { t: AskThread }) {
+  const last = t.turns.at(-1);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        st.set({ reviewOpen: false });
+        agent.reopen(t);
+      }}
+      className="block w-full rounded-control px-2 py-2 text-left transition-[background-color] duration-100 [@media(hover:hover)]:hover:bg-hover"
+    >
+      <span className="block truncate text-[13px] text-ink">{last?.question}</span>
+      <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-[18px] text-ink-3">{gist(last?.answer ?? "")}</span>
+      <span className="mt-1 flex items-center gap-1.5 text-[11.5px] text-ink-3 tabular-nums">
+        <span className="font-mono">
+          {basename(t.path)}:{t.start === t.end ? t.start : `${t.start}–${t.end}`}
+        </span>
+        {t.turns.length > 1 ? <span>· {t.turns.length} questions</span> : null}
+        {t.outdated ? <span className="text-orange">· lines changed since</span> : null}
+      </span>
+    </button>
   );
 }

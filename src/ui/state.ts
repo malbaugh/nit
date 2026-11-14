@@ -105,6 +105,8 @@ export type State = {
   agentOpen: boolean;
   /** The pull request drawer: description, checks, the Linear issue. */
   prOpen: boolean;
+  /** Where the Review sheet opens: at your questions, from the sidebar's button. */
+  reviewAt: "questions" | null;
   /** Claude's co-review or question in progress, or the last one. */
   job: Job | null;
   /** The lines an "Ask Claude" box is open on, before (or between) questions. */
@@ -169,6 +171,7 @@ let state: State = {
   agentActivity: [],
   agentOpen: false,
   prOpen: false,
+  reviewAt: null,
   job: null,
   asking: null,
   view: "review",

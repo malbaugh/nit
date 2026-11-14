@@ -104,6 +104,7 @@ export function FileList() {
   const viewed = st.useStore((s) => s.viewed);
   const changed = st.useStore((s) => s.changedSinceViewed.size);
   const drafts = st.useStore((s) => s.drafts);
+  const asks = st.useStore((s) => s.asks.length);
   const branch = st.useStore((s) => s.data?.branch);
   const base = st.useStore((s) => s.data?.base);
   const done = useMemo(() => files.reduce((n, f) => n + (viewed.has(f.name) ? 1 : 0), 0), [files, viewed]);
@@ -212,6 +213,17 @@ export function FileList() {
             </span>
           </button>
         )}
+        {asks ? (
+          <button
+            type="button"
+            onClick={() => st.set({ reviewOpen: true, reviewAt: "questions" })}
+            title="Your questions to Claude (only you see these)"
+            className="flex h-7 items-center gap-1.5 rounded-control px-2 text-[12.5px] text-ink-2 tabular-nums transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink"
+          >
+            <Sparks width={14} height={14} className="text-accent-ink" />
+            {asks}
+          </button>
+        ) : null}
         <span className="ml-auto flex items-center gap-1">
           <SettingsButton />
           <Kbd k="Mod+k" quiet />
