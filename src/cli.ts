@@ -1,10 +1,24 @@
 #!/usr/bin/env bun
 import { join } from "node:path";
+import { type createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
+import { $ } from "bun";
+import { z } from "zod";
 import { createAgent } from "./agent";
 import { buildUI, isStale, uiDirFor } from "./build";
 import { checkoutPr, parsePrArg } from "./checkout";
+import {
+  ASK_INSTRUCTIONS,
+  askPrompt,
+  FINDINGS_SCHEMA,
+  type Finding,
+  fileDiff,
+  proposals,
+  REVIEW_INSTRUCTIONS,
+  reviewPrompt,
+} from "./coreview";
 import * as git from "./git";
 import { createGitHub } from "./github";
+import { changedPaths, type Guidelines, guidelinesBlock, guidelineText, loadGuidelines } from "./guidelines";
 import { createNavigator } from "./navigate";
 import { createSnapshots } from "./snapshot";
 import { openStore } from "./store";
@@ -44,6 +58,31 @@ function patch() {
 const nav = await createNavigator(root, mergeBase, patch);
 const github = createGitHub(root, branch, forcedPr);
 const agent = createAgent(root, createSnapshots(root, project), store);
+
+/** nit's own tools for Claude: guidelines from the base branch, and one file's diff. */
+function claudeTools(
+  guidelines: Guidelines,
+  text: string,
+): NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]> {
+  const reply = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
+  return [
+    tool(
+      "read_guideline",
+      "Read one of the project's guidelines in full, as it is on the base branch (from the <guidelines> list).",
+      { path: z.string().describe("The guideline's path, as listed") },
+      async ({ path }) => {
+        const g = guidelineText(guidelines, path);
+        return reply(g ? g.text : `No guideline at ${path} applies to this change.`);
+      },
+    ),
+    tool(
+      "file_diff",
+      "The diff of one file in this pull request.",
+      { path: z.string().describe("The file's path in the repo") },
+      async ({ path }) => reply(fileDiff(text, path).slice(0, 60_000) || `${path} isn't changed by this pull request.`),
+    ),
+  ];
+}
 github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
@@ -111,9 +150,14 @@ function parseDraft(v: unknown): Draft | null {
     d.anchor.every((l) => typeof l === "string") &&
     (d.replyTo == null || (typeof d.replyTo === "string" && /^[\w=-]{1,200}$/.test(d.replyTo)));
   if (!ok) return null;
+  // The page may only keep or clear a proposal it was given (accepting clears it), never make one:
+  // proposals come from the co-reviewer, which checks them first.
+  const stored = store.draft(d.id!);
+  const proposal = d.proposal && stored?.proposal ? stored.proposal : null;
   const now = Date.now();
   return {
     ...(d as Draft),
+    proposal,
     createdAt: Number(d.createdAt) || now,
     updatedAt: now,
   };
@@ -261,7 +305,8 @@ const serve = (p: number) =>
             : null;
           const drafts = store
             .drafts()
-            .filter((d) => (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)));
+            // Claude's proposals stay local until the reviewer accepts them.
+            .filter((d) => !d.proposal && (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)));
           try {
             const result = await github.postReview(drafts, body.event as ReviewEvent, String(body.summary ?? ""));
             for (const id of result.posted) store.deleteDraft(id);
@@ -294,10 +339,119 @@ const serve = (p: number) =>
           // Replies to GitHub threads are conversation, not code.
           const drafts = store
             .drafts()
-            .filter((d) => !d.replyTo && (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)));
+            .filter(
+              (d) => !d.replyTo && !d.proposal && (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)),
+            );
           if (!drafts.length) return fail(400, "no comments to apply");
           try {
-            return json({ run: await agent.start(drafts) });
+            // The project's rules for the files being changed, from the base branch.
+            const guidelines = await loadGuidelines(root, base, [...new Set(drafts.map((d) => d.path))]);
+            const text = await patch();
+            return json({
+              run: await agent.start(drafts, {
+                guidelines: guidelinesBlock(guidelines),
+                tools: claudeTools(guidelines, text),
+              }),
+            });
+          } catch (e) {
+            return fail(409, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/agent/job": {
+        GET: guarded(async () => json({ job: agent.job() })),
+      },
+      "/api/coreview": {
+        // Claude reviews the whole diff; what survives nit's checks becomes proposed drafts.
+        POST: guarded(async () => {
+          const text = await patch();
+          if (!text.trim()) return fail(400, "nothing to review");
+          const changed = changedPaths(text);
+          const guidelines = await loadGuidelines(root, base, changed);
+          const gh = await github.state();
+          try {
+            const job = await agent.runJob("review", {
+              prompt: reviewPrompt({
+                patch: text,
+                title: gh.status === "ready" ? gh.pr.title : null,
+                guidelines,
+                maxInline: 120_000,
+              }),
+              instructions: REVIEW_INSTRUCTIONS,
+              guidelines,
+              tools: claudeTools(guidelines, text),
+              outputFormat: FINDINGS_SCHEMA,
+              finish: async (out, j) => {
+                const result = out as { findings?: Finding[]; summary?: string } | undefined;
+                const { drafts, dropped } = await proposals(result?.findings ?? [], {
+                  patch: text,
+                  guidelines,
+                  existing: store.drafts(),
+                  files: (await $`git ls-files`.cwd(root).quiet().text()).split("\n"),
+                  text: (side, path) =>
+                    side === "additions" ? git.readWorking(root, path) : git.readAtRef(root, mergeBase, path),
+                });
+                for (const d of drafts) store.saveDraft(d);
+                j.found = drafts.length;
+                j.dropped = dropped;
+                j.summary = result?.summary?.trim() || null;
+              },
+            });
+            return json({ job });
+          } catch (e) {
+            return fail(409, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/ask": {
+        // A question about lines, answered in place; `followUp` continues the last answer's session.
+        POST: guarded(async (req) => {
+          const b = (await req.json().catch(() => null)) as {
+            path?: unknown;
+            side?: unknown;
+            start?: unknown;
+            end?: unknown;
+            question?: unknown;
+            followUp?: unknown;
+          } | null;
+          const side = b?.side === "deletions" ? "deletions" : "additions";
+          const start = Number(b?.start);
+          const end = Number(b?.end);
+          if (
+            typeof b?.path !== "string" ||
+            !validPath(b.path) ||
+            !Number.isInteger(start) ||
+            !Number.isInteger(end) ||
+            start < 1 ||
+            end < start ||
+            typeof b.question !== "string" ||
+            !b.question.trim() ||
+            b.question.length > 4000
+          )
+            return fail(400, "invalid question");
+          const text =
+            side === "additions" ? await git.readWorking(root, b.path) : await git.readAtRef(root, mergeBase, b.path);
+          if (text === null) return fail(404, "file not found");
+          const whole = await patch();
+          const guidelines = await loadGuidelines(root, base, [b.path]);
+          const at = { path: b.path, side, start, end } as const;
+          try {
+            const job = await agent.runJob("ask", {
+              prompt: askPrompt({
+                question: b.question,
+                ...at,
+                lines: text.split("\n").slice(start - 1, end),
+                fileDiff: fileDiff(whole, b.path),
+                guidelines,
+              }),
+              instructions: ASK_INSTRUCTIONS,
+              guidelines,
+              tools: claudeTools(guidelines, whole),
+              at,
+              question: b.question,
+              resume: typeof b.followUp === "string" && /^[\w-]{8,64}$/.test(b.followUp) ? b.followUp : null,
+            });
+            return json({ job });
           } catch (e) {
             return fail(409, e instanceof Error ? e.message : String(e));
           }

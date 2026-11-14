@@ -18,10 +18,13 @@ import {
   NavArrowRight,
   Page,
   SidebarExpand,
+  Sparks,
   ViewColumns2,
 } from "iconoir-react/regular";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Side } from "../types";
+import { AskAnnotation } from "./Ask";
+import * as agent from "./agent";
 import { HIGHLIGHTER } from "./Code";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
@@ -35,7 +38,7 @@ import { ThreadAnnotation } from "./Threads";
 import { useTheme } from "./theme";
 import { Button, basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
 
-type Meta = { id: string } | { peek: true } | { thread: string } | { suggesting: true };
+type Meta = { id: string } | { peek: true } | { thread: string } | { suggesting: true } | { asking: true };
 
 /** Under the lines being edited into a suggestion: what's happening and how to finish. */
 function SuggestingBar() {
@@ -160,6 +163,7 @@ function lineMenu(target: Element): MenuItem[] | null {
       ? [{ label: "Copy", icon: <Copy />, keys: "Mod+c", run: () => copy(picked, "the selection") }, null]
       : []),
     { label: "Comment", icon: <ChatPlusIn />, keys: "c", run: st.startComment },
+    { label: "Ask Claude", icon: <Sparks />, keys: "Mod+i", run: agent.startAsk },
     ...(side === "additions"
       ? [
           {
@@ -289,6 +293,7 @@ export function DiffPane() {
 
   const peekAt = st.useStore((s) => s.peek?.at);
   const suggesting = st.useStore((s) => s.suggesting);
+  const asking = st.useStore((s) => s.asking);
   const suggestingHere = suggesting && file && suggesting.path === file.name ? suggesting : null;
   // Always reject: the review's diff never changes; suggest.complete keeps the edited lines.
   const onEditComplete = useCallback((event: FileDiffEditCompleteEvent<Meta, undefined>) => {
@@ -312,6 +317,9 @@ export function DiffPane() {
       .map((d) => ({ side: d.side, lineNumber: d.end, metadata: { id: d.id } }));
     if (suggestingHere)
       list.push({ side: "additions", lineNumber: suggestingHere.end, metadata: { suggesting: true } });
+    const askPath = asking?.side === "deletions" ? (file.prevName ?? file.name) : file.name;
+    if (asking && asking.path === askPath)
+      list.push({ side: asking.side, lineNumber: asking.end, metadata: { asking: true } });
     for (const t of threads ?? []) {
       if (t.path !== file.name) continue;
       // File-level and outdated threads sit above the first change.
@@ -324,7 +332,7 @@ export function DiffPane() {
     }
     if (peekAt) list.push({ side: peekAt.side, lineNumber: peekAt.line, metadata: { peek: true } });
     return list;
-  }, [drafts, file, peekAt, threads, suggestingHere]);
+  }, [drafts, file, peekAt, threads, suggestingHere, asking]);
 
   const selected = useMemo<SelectedLineRange | null>(() => {
     if (!cursor || suggestingHere) return null; // the editor owns the selection while suggesting
@@ -338,7 +346,9 @@ export function DiffPane() {
 
   const renderAnnotation = useCallback(
     (a: DiffLineAnnotation<Meta>) =>
-      "suggesting" in a.metadata ? (
+      "asking" in a.metadata ? (
+        <AskAnnotation />
+      ) : "suggesting" in a.metadata ? (
         <SuggestingBar />
       ) : "peek" in a.metadata ? (
         <PeekAnnotation />

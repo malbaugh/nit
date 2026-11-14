@@ -3,6 +3,7 @@ import type {
   Draft,
   FileContents,
   GitHubState,
+  Job,
   Location,
   PostResult,
   ReviewData,
@@ -35,6 +36,10 @@ export type At = { path: string; side: Side; line: number };
 export const api = {
   agent: () => call<{ run: AgentRun | null }>("GET", "/api/agent"),
   applyAgent: (ids?: string[]) => call<{ run: AgentRun }>("POST", "/api/agent/apply", { ids }),
+  coreview: () => call<{ job: Job }>("POST", "/api/coreview", {}),
+  ask: (b: { path: string; side: Side; start: number; end: number; question: string; followUp?: string | null }) =>
+    call<{ job: Job }>("POST", "/api/ask", b),
+  job: () => call<{ job: Job | null }>("GET", "/api/agent/job"),
   stopAgent: () => call<{ ok: true }>("POST", "/api/agent/stop", {}),
   undoAgent: () => call<{ restored: string[]; kept: string[] }>("POST", "/api/agent/undo", {}),
   agentChanges: async () => {

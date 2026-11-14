@@ -1,8 +1,10 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import { type HookCallback, query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, type HookCallback, query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { FINDINGS_SCHEMA } from "./coreview";
+import type { Guidelines } from "./guidelines";
 import type { Snapshots } from "./snapshot";
 import type { Store } from "./store";
-import type { AgentEvent, AgentOutcome, AgentRun, Draft } from "./types";
+import type { AgentEvent, AgentOutcome, AgentRun, Draft, Job } from "./types";
 
 /**
  * Applies review comments with the Claude Agent SDK, on the Claude Code login already on this
@@ -12,13 +14,14 @@ import type { AgentEvent, AgentOutcome, AgentRun, Draft } from "./types";
  */
 
 const TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+const READ_TOOLS = ["Read", "Glob", "Grep"];
 
 const INSTRUCTIONS = `You are applying code review comments inside a review tool. The reviewer wrote each
 comment on lines of a file in this checkout.
 
 For each comment:
-- Make the smallest change that addresses it, in the codebase's own style. Read the repo's
-  CLAUDE.md, AGENTS.md or contributing notes first if they exist.
+- Make the smallest change that addresses it, in the codebase's own style, following the
+  project's rules in <guidelines> (from the base branch; read more with read_guideline).
 - A comment with a <suggestion> gives the exact replacement for its lines: apply that text.
 - A question, or a comment you can't act on safely, gets no code change: answer it in the note.
 - Change nothing the comments don't ask for. You can't run commands, and you don't commit.
@@ -68,7 +71,7 @@ export function promptFor(drafts: Draft[]) {
  * A PreToolUse hook for every file tool, whatever settings say: nothing outside the checkout,
  * nothing in its .git. Shared by Apply and Ask.
  */
-export function confineTo(root: string): HookCallback {
+export function confineTo(root: string, opts: { guidelinesFromBase?: boolean } = {}): HookCallback {
   return async (input) => {
     if (input.hook_event_name !== "PreToolUse") return {};
     const args = (input.tool_input ?? {}) as Record<string, unknown>;
@@ -76,6 +79,15 @@ export function confineTo(root: string): HookCallback {
       const p = args[key];
       if (typeof p !== "string" || !p) continue;
       const rel = relative(root, resolve(root, p));
+      // Reviewing: the checkout's guideline files may be the PR's edits; the rules are the base's.
+      if (opts.guidelinesFromBase && input.tool_name === "Read" && isGuidelineFile(rel))
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: `This pull request may change ${rel}. Use read_guideline("${rel}") for the base branch's rules.`,
+          },
+        };
       if (rel.startsWith("..") || isAbsolute(rel) || rel === ".git" || rel.startsWith(".git/"))
         return {
           hookSpecificOutput: {
@@ -89,6 +101,12 @@ export function confineTo(root: string): HookCallback {
   };
 }
 
+const isGuidelineFile = (rel: string) =>
+  /(^|\/)(AGENTS|CLAUDE|REVIEW|BUGBOT)\.md$/.test(rel) ||
+  rel.startsWith(".claude/rules/") ||
+  rel.startsWith(".github/instructions/") ||
+  rel === ".github/copilot-instructions.md";
+
 /** What a tool call is about, for progress: the file it touches or what it looks for. */
 export function targetOf(root: string, input: Record<string, unknown>) {
   const p = (input.file_path ?? input.path ?? input.pattern ?? "") as string;
@@ -98,8 +116,9 @@ export function targetOf(root: string, input: Record<string, unknown>) {
 export function createAgent(root: string, snapshots: Snapshots, store: Store) {
   let current: { run: AgentRun; abort: AbortController; events: AgentEvent[] } | null = null;
   const listeners = new Set<(e: AgentEvent) => void>();
+  let replayed: AgentEvent[] = [];
   const emit = (e: AgentEvent) => {
-    current?.events.push(e);
+    replayed.push(e);
     for (const l of listeners) l(e);
   };
   const save = (run: AgentRun) => {
@@ -108,23 +127,33 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
   };
 
   const confine = confineTo(root);
+  const confineReview = confineTo(root, { guidelinesFromBase: true });
+  let job: { job: Job; abort: AbortController } | null = null;
+  const busy = () => current !== null || job !== null;
+  const announce = (j: Job) => emit({ type: "job", job: j });
 
   return {
     /** The run in progress, else the last one for this review. */
     state: (): AgentRun | null => current?.run ?? store.agentRun(),
+    /** The co-review or question in progress. */
+    job: (): Job | null => job?.job ?? null,
     /** Events of the run in progress so far, for a page that connects midway. */
-    replay: (): AgentEvent[] => current?.events ?? [],
+    replay: (): AgentEvent[] => (busy() ? replayed : []),
     subscribe(l: (e: AgentEvent) => void) {
       listeners.add(l);
       return () => listeners.delete(l);
     },
     stop() {
       current?.abort.abort();
+      job?.abort.abort();
     },
 
     /** Starts a pass over `drafts`. One at a time; resolves when it has started. */
-    async start(drafts: Draft[]): Promise<AgentRun> {
-      if (current) throw new Error("The agent is already running.");
+    async start(
+      drafts: Draft[],
+      context: { guidelines: string; tools: NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]> },
+    ): Promise<AgentRun> {
+      if (busy()) throw new Error("Claude is already working on this review.");
       const previous = store.agentRun();
       const run: AgentRun = {
         id: crypto.randomUUID(),
@@ -143,19 +172,26 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
       };
       const abort = new AbortController();
       current = { run, abort, events: [] };
+      replayed = current.events;
       save(run);
-      void this.work(run, drafts, abort);
+      void this.work(run, drafts, abort, context);
       return run;
     },
 
-    async work(run: AgentRun, drafts: Draft[], abort: AbortController) {
+    async work(
+      run: AgentRun,
+      drafts: Draft[],
+      abort: AbortController,
+      context: { guidelines: string; tools: NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]> },
+    ) {
       try {
         const messages = query({
-          prompt: promptFor(drafts),
+          prompt: [promptFor(drafts), context.guidelines].filter(Boolean).join("\n\n"),
           options: {
             cwd: root,
             tools: TOOLS,
-            allowedTools: TOOLS,
+            allowedTools: [...TOOLS, ...context.tools.map((t) => `mcp__nit__${t.name}`)],
+            mcpServers: { nit: createSdkMcpServer({ name: "nit", tools: context.tools }) },
             canUseTool: async (tool) => ({ behavior: "deny", message: `${tool} isn't available in nit.` }),
             settingSources: [],
             systemPrompt: { type: "preset", preset: "claude_code", append: INSTRUCTIONS },
@@ -198,6 +234,106 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
           run.outcomes = out.filter((o) => run.drafts.includes(o.id));
         } else run.error = m.errors.join("; ") || m.subtype;
       }
+    },
+
+    /**
+     * A read-only job: Read, Glob and Grep in the checkout, plus nit's own tools; guidelines only
+     * from the base branch. `finish` turns the structured result (if any) into the job's outcome.
+     */
+    async runJob(
+      kind: Job["kind"],
+      o: {
+        prompt: string;
+        instructions: string;
+        guidelines: Guidelines;
+        tools: NonNullable<Parameters<typeof createSdkMcpServer>[0]["tools"]>;
+        outputFormat?: typeof FINDINGS_SCHEMA;
+        at?: Job["at"];
+        question?: string;
+        resume?: string | null;
+        finish?: (structured: unknown, j: Job) => Promise<void>;
+      },
+    ): Promise<Job> {
+      if (busy()) throw new Error("Claude is already working on this review.");
+      const j: Job = {
+        id: crypto.randomUUID(),
+        kind,
+        state: "running",
+        startedAt: Date.now(),
+        endedAt: null,
+        error: null,
+        found: 0,
+        dropped: [],
+        summary: null,
+        at: o.at ?? null,
+        question: o.question ?? null,
+        answer: "",
+        sessionId: o.resume ?? null,
+        guidelines: { inline: o.guidelines.inline.map((d) => d.path), indexed: o.guidelines.indexed.length },
+      };
+      const abort = new AbortController();
+      job = { job: j, abort };
+      replayed = [];
+      announce(j);
+      const server = createSdkMcpServer({ name: "nit", tools: o.tools });
+      const names = o.tools.map((t) => `mcp__nit__${t.name}`);
+      void (async () => {
+        let structured: unknown;
+        try {
+          const messages = query({
+            prompt: o.prompt,
+            options: {
+              cwd: root,
+              tools: READ_TOOLS,
+              allowedTools: [...READ_TOOLS, ...names],
+              mcpServers: { nit: server },
+              canUseTool: async (t) => ({ behavior: "deny", message: `${t} isn't available in nit.` }),
+              settingSources: [],
+              systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
+              hooks: { PreToolUse: [{ hooks: [confineReview] }] },
+              includePartialMessages: kind === "ask",
+              abortController: abort,
+              ...(o.outputFormat ? { outputFormat: o.outputFormat } : {}),
+              ...(o.resume ? { resume: o.resume } : {}),
+            },
+          });
+          for await (const m of messages as AsyncIterable<SDKMessage>) {
+            if ("session_id" in m && m.session_id) j.sessionId = m.session_id;
+            if (m.type === "stream_event") {
+              const e = m.event;
+              if (e.type === "content_block_delta" && e.delta.type === "text_delta" && !m.parent_tool_use_id) {
+                j.answer += e.delta.text;
+                emit({ type: "delta", text: e.delta.text });
+              }
+            } else if (m.type === "assistant") {
+              for (const block of m.message.content)
+                if (block.type === "tool_use" && block.name !== "StructuredOutput")
+                  emit({
+                    type: "tool",
+                    tool: block.name.replace(/^mcp__nit__/, ""),
+                    target: targetOf(root, block.input as Record<string, unknown>),
+                  });
+                // A new assistant turn after tools: the streamed answer restarts there.
+                else if (block.type === "text" && kind === "ask") j.answer = block.text;
+            } else if (m.type === "result") {
+              if (m.subtype === "success") {
+                structured = m.structured_output;
+                if (kind === "ask" && m.result) j.answer = m.result;
+              } else j.error = m.errors.join("; ") || m.subtype;
+            }
+          }
+          if (!abort.signal.aborted && !j.error) await o.finish?.(structured, j);
+          j.state = abort.signal.aborted ? "stopped" : j.error ? "failed" : "done";
+        } catch (e) {
+          j.state = abort.signal.aborted ? "stopped" : "failed";
+          if (!abort.signal.aborted) j.error = e instanceof Error ? e.message : String(e);
+        } finally {
+          j.endedAt = Date.now();
+          job = null;
+          announce(j);
+        }
+      })();
+      return j;
     },
 
     /** Puts back what the last pass changed, except files edited since. */

@@ -10,18 +10,21 @@ import {
   List,
   NumberedListLeft,
   Quote,
+  Sparks,
   TaskList,
   TextSize,
   Trash,
   WarningCircle,
 } from "iconoir-react/regular";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Draft } from "../types";
+import type { Draft, Proposal } from "../types";
 import { Note, OutcomeChip } from "./AgentPanel";
+import * as agent from "./agent";
 import * as md from "./markdown-edit";
+import * as nav from "./nav";
 import * as st from "./state";
 import * as suggest from "./suggest";
-import { Button, IconButton, Kbd } from "./ui";
+import { Button, IconButton, Kbd, Tooltip } from "./ui";
 
 // The Markdown parser is the heaviest piece of the UI; load it after the diff has painted.
 const LazyMarkdown = lazy(() => import("./Markdown").then((m) => ({ default: m.Markdown })));
@@ -352,6 +355,7 @@ function SaveState({ state, hasContent }: { state?: "saving" | "error"; hasConte
 
 function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const proposal = draft.proposal ?? null;
   const { label, rest } = splitLabel(draft.body);
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: "nearest" });
@@ -365,12 +369,30 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
       onClick={() => st.set({ focused: draft.id })}
       onDoubleClick={() => st.editDraft(draft.id)}
       className={`group max-w-[780px] rounded-card bg-surface px-3.5 pt-2.5 pb-3 transition-shadow duration-150 ${
-        focused ? "shadow-[0_0_0_1px_var(--accent),0_0_0_4px_var(--accent-tint)]" : "shadow-card"
+        focused
+          ? "shadow-[0_0_0_1px_var(--accent),0_0_0_4px_var(--accent-tint)]"
+          : proposal
+            ? "shadow-[0_0_0_1px_color-mix(in_oklch,var(--accent)_35%,transparent),0_1px_2px_oklch(0_0_0/0.06)]"
+            : "shadow-card"
       }`}
     >
       <div className="flex h-6 items-center gap-2 text-[12px]">
-        <span className="size-1.5 rounded-full bg-orange" aria-hidden />
-        <span className="font-medium text-ink">Draft</span>
+        {proposal ? (
+          <>
+            <Sparks width={13} height={13} className="shrink-0 text-accent-ink" aria-hidden />
+            <span className="font-medium text-ink">Claude</span>
+            {proposal.verdict === "PLAUSIBLE" ? (
+              <Tooltip label="Rests on one thing Claude couldn't verify">
+                <span className="rounded-chip bg-hover-2 px-1.5 py-px text-[11px] text-ink-3">unverified</span>
+              </Tooltip>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <span className="size-1.5 rounded-full bg-orange" aria-hidden />
+            <span className="font-medium text-ink">Draft</span>
+          </>
+        )}
         {label ? (
           <span className={`rounded-chip px-1.5 py-px text-[11.5px] font-medium ${labelTone[label]}`}>{label}</span>
         ) : null}
@@ -382,17 +404,21 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
             focused ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
           }`}
         >
-          {draft.suggestion !== null ? (
+          {draft.suggestion !== null && !proposal ? (
             <IconButton label="Apply suggestion" keys="a" onClick={() => void st.applySuggestion(draft.id)}>
               <CheckCircle />
             </IconButton>
           ) : null}
-          <IconButton label="Edit" keys="e" onClick={() => st.editDraft(draft.id)}>
-            <EditPencil />
-          </IconButton>
-          <IconButton label="Delete" keys="Backspace" tone="danger" onClick={() => st.removeDraft(draft.id)}>
-            <Trash />
-          </IconButton>
+          {proposal ? null : (
+            <>
+              <IconButton label="Edit" keys="e" onClick={() => st.editDraft(draft.id)}>
+                <EditPencil />
+              </IconButton>
+              <IconButton label="Delete" keys="Backspace" tone="danger" onClick={() => st.removeDraft(draft.id)}>
+                <Trash />
+              </IconButton>
+            </>
+          )}
         </span>
       </div>
       {rest.trim() ? (
@@ -404,8 +430,78 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
         </div>
       ) : null}
       {draft.suggestion !== null ? <SuggestionDiff before={draft.anchor} after={draft.suggestion.split("\n")} /> : null}
-      <AgentOutcome id={draft.id} />
+      {proposal ? <ProposalDetails id={draft.id} proposal={proposal} /> : <AgentOutcome id={draft.id} />}
     </div>
+  );
+}
+
+/** Why Claude raised it (the trigger, what it read, the rule), and the reviewer's decision. */
+function ProposalDetails({ id, proposal }: { id: string; proposal: Proposal }) {
+  return (
+    <>
+      {proposal.trigger || proposal.evidence.length || proposal.guideline ? (
+        <div className="mt-2 space-y-1.5 text-[12px] leading-snug text-ink-3">
+          {proposal.trigger ? (
+            <p>
+              <span className="text-ink-2">When:</span> <Note text={proposal.trigger} />
+            </p>
+          ) : null}
+          {proposal.guideline ? (
+            <blockquote className="border-l-2 border-line-strong pl-2.5">
+              <span className="text-ink-2">“{proposal.guideline.quote}”</span>
+              <span className="ml-1.5 font-mono text-[11px]">{proposal.guideline.file}</span>
+            </blockquote>
+          ) : null}
+          {proposal.evidence.length ? (
+            <p className="flex flex-wrap items-center gap-1">
+              <span className="text-ink-2">Read:</span>
+              {proposal.evidence.map((e) => {
+                const m = /^(.+?):(\d+)/.exec(e);
+                return m ? (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      nav.openLocation({ path: m[1], line: Number(m[2]) });
+                    }}
+                    className="rounded-chip bg-hover px-1.5 py-px font-mono text-[11px] text-ink-2 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink"
+                  >
+                    {e}
+                  </button>
+                ) : (
+                  <span key={e} className="font-mono text-[11px]">
+                    {e}
+                  </span>
+                );
+              })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mt-2.5 flex items-center gap-1.5">
+        <Tooltip label="Make it your draft: it posts and applies like your own" keys="y">
+          <Button tone="primary" className="h-6 px-2" onClick={() => agent.accept(id)}>
+            Accept
+          </Button>
+        </Tooltip>
+        <Button
+          tone="ghost"
+          className="h-6 px-2"
+          onClick={() => {
+            agent.accept(id);
+            st.editDraft(id);
+          }}
+        >
+          Edit
+        </Button>
+        <Tooltip label="Dismiss" keys="Backspace">
+          <Button tone="ghost" className="h-6 px-2" onClick={() => st.removeDraft(id)}>
+            Dismiss
+          </Button>
+        </Tooltip>
+      </div>
+    </>
   );
 }
 

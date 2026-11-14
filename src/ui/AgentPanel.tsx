@@ -1,7 +1,7 @@
 import { Scroll, Sheet } from "@silk-hq/components";
 import { EditPencil, Eye, Page, Search, Undo, Xmark } from "iconoir-react/regular";
 import type { ReactNode } from "react";
-import type { AgentOutcome, AgentRun } from "../types";
+import type { AgentOutcome, AgentRun, Job } from "../types";
 import * as agent from "./agent";
 import * as st from "./state";
 import { Button, basename, IconButton, Kbd } from "./ui";
@@ -70,6 +70,40 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** What the last co-review proposed, what nit's checks dropped and why, and the guidelines it had. */
+function CoReviewSummary({ job }: { job: Job }) {
+  return (
+    <Section title="Co-review">
+      <p className="px-2 text-[12.5px] leading-snug text-ink-2">
+        {job.state === "running"
+          ? "Reading the diff…"
+          : job.state === "failed"
+            ? `Failed: ${job.error ?? "unknown error"}`
+            : job.found
+              ? `Proposed ${job.found} ${job.found === 1 ? "comment" : "comments"}, shown on the diff to accept or dismiss.`
+              : "Nothing worth raising."}
+        {job.summary ? ` ${job.summary}` : ""}
+      </p>
+      {job.dropped.length ? (
+        <details className="mx-2 mt-1.5 text-[12px] text-ink-3">
+          <summary className="cursor-pointer">{job.dropped.length} dropped by nit's checks</summary>
+          <ul className="mt-1 space-y-1">
+            {job.dropped.map((d) => (
+              <li key={d.body} className="leading-snug">
+                <span className="text-ink-2">{d.reason}:</span> {d.body}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      <p className="mt-1.5 truncate px-2 text-[11.5px] text-ink-3" title={job.guidelines.inline.join("\n")}>
+        Guidelines from the base branch: {job.guidelines.inline.length} in full
+        {job.guidelines.indexed ? `, ${job.guidelines.indexed} more on request` : ""}
+      </p>
+    </Section>
+  );
+}
+
 /**
  * Claude's pass over the drafts, from the right like the review sheet: live activity while it
  * works, then what it did with each comment, the files it changed, and undo.
@@ -79,7 +113,8 @@ export function AgentPanel() {
   const run = st.useStore((s) => s.agent);
   const activity = st.useStore((s) => s.agentActivity);
   const drafts = st.useStore((s) => s.drafts);
-  const running = run?.state === "running";
+  const job = st.useStore((s) => s.job);
+  const running = run?.state === "running" || job?.state === "running";
 
   return (
     <Sheet.Root license="non-commercial" presented={open} onPresentedChange={(p) => st.set({ agentOpen: p })}>
@@ -106,6 +141,7 @@ export function AgentPanel() {
             <Scroll.Root className="min-h-0 flex-1">
               <Scroll.View className="h-full w-full">
                 <Scroll.Content className="box-border w-full min-w-0 p-2">
+                  {job?.kind === "review" ? <CoReviewSummary job={job} /> : null}
                   {run?.outcomes.length ? (
                     <Section title="Comments">
                       {run.outcomes.map((o) => {

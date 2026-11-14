@@ -1,5 +1,18 @@
 export type Side = "additions" | "deletions";
 
+/** Why Claude proposed a comment: what it checked, and the rule it relies on. */
+export type Proposal = {
+  /** CONFIRMED: Claude read the evidence. PLAUSIBLE: one unverified assumption (asked as a question). */
+  verdict: "CONFIRMED" | "PLAUSIBLE";
+  severity: "important" | "nit";
+  /** The input or state that makes it fail. */
+  trigger: string | null;
+  /** file:line locations Claude read to support it. */
+  evidence: string[];
+  /** The project guideline it cites, quoted from the base branch. */
+  guideline: { file: string; quote: string } | null;
+};
+
 export type Draft = {
   id: string;
   path: string;
@@ -13,6 +26,8 @@ export type Draft = {
   anchor: string[];
   /** A reply to an existing GitHub review thread (its id), posted with the review. */
   replyTo?: string | null;
+  /** Set while this is Claude's proposal: never posted or applied until the reviewer accepts it. */
+  proposal?: Proposal | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -134,8 +149,32 @@ export type AgentRun = {
   sessionId: string | null;
 };
 
+/** A read-only Claude job: a co-review of the diff, or a question about lines. */
+export type Job = {
+  id: string;
+  kind: "review" | "ask";
+  state: "running" | "done" | "stopped" | "failed";
+  startedAt: number;
+  endedAt: number | null;
+  error: string | null;
+  /** review: proposals kept, and findings dropped by nit's checks (with why). */
+  found: number;
+  dropped: { reason: string; body: string }[];
+  summary: string | null;
+  /** ask: where, the question, and the answer as it streams. */
+  at: { path: string; side: Side; start: number; end: number } | null;
+  question: string | null;
+  answer: string;
+  /** ask: the session a follow-up question continues. */
+  sessionId: string | null;
+  /** Guidelines Claude had: in the prompt, and listed for it to read. */
+  guidelines: { inline: string[]; indexed: number };
+};
+
 /** The live stream while the agent works. */
 export type AgentEvent =
   | { type: "run"; run: AgentRun }
+  | { type: "job"; job: Job }
+  | { type: "delta"; text: string }
   | { type: "text"; text: string }
   | { type: "tool"; tool: string; target: string };

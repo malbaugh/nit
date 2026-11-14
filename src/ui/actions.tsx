@@ -4,6 +4,7 @@ import {
   ArrowUp,
   ChatLines,
   ChatPlusIn,
+  Check,
   CheckCircle,
   CodeBracketsSquare,
   DocMagnifyingGlass,
@@ -156,6 +157,33 @@ export const actions: Action[] = [
     icon: <Sparks />,
     when: () => st.get().agent?.state !== "running" && st.get().drafts.some((d) => !d.replyTo),
     run: () => void agent.apply(),
+  },
+  {
+    id: "coreview",
+    group: "Review",
+    label: "Co-review with Claude",
+    keys: [],
+    icon: <Sparks />,
+    when: () => st.get().agent?.state !== "running" && st.get().job?.state !== "running",
+    run: () => void agent.coreview(),
+  },
+  {
+    id: "ask",
+    group: "Review",
+    label: "Ask Claude about these lines",
+    keys: ["Mod+i"],
+    icon: <Sparks />,
+    when: () => !!st.get().cursor && !st.get().browse,
+    run: agent.startAsk,
+  },
+  {
+    id: "accept-proposal",
+    group: "Review",
+    label: "Accept Claude's proposal",
+    keys: ["y"],
+    icon: <Check />,
+    when: () => !!focusedDraft()?.proposal,
+    run: () => agent.accept(st.get().focused!),
   },
   {
     id: "agent-panel",
@@ -439,7 +467,8 @@ export function handleKey(e: KeyboardEvent) {
   // The sheet traps focus and handles Esc itself.
   if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen || s.searchOpen || s.agentOpen) return;
   if (e.key === "Escape") {
-    if (s.peek) nav.closePeek();
+    if (s.asking) st.set({ asking: null });
+    else if (s.peek) nav.closePeek();
     else if (s.browse) nav.goBack();
     else if (s.view === "agent") st.set({ view: "review" });
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });

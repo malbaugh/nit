@@ -6,7 +6,8 @@ import * as st from "./state";
 import { IconButton, Kbd, ProgressRing, Resizer } from "./ui";
 
 export function FileList() {
-  const agentRunning = st.useStore((s) => s.agent?.state === "running");
+  const agentRunning = st.useStore((s) => s.agent?.state === "running" || s.job?.state === "running");
+  const jobKind = st.useStore((s) => (s.job?.state === "running" ? s.job.kind : null));
   const agentCount = st.useStore((s) => s.agent?.drafts.length ?? 0);
   const width = st.useStore((s) => s.widths.files);
   const files = st.useStore((s) => s.files);
@@ -62,7 +63,13 @@ export function FileList() {
             className="flex h-7 min-w-0 items-center gap-2 rounded-control px-2 text-[12.5px] text-ink-2 transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink"
           >
             <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-line-strong border-t-accent" />
-            <span className="truncate">Claude is applying {agentCount}…</span>
+            <span className="truncate">
+              {jobKind === "review"
+                ? "Claude is reviewing…"
+                : jobKind === "ask"
+                  ? "Claude is answering…"
+                  : `Claude is applying ${agentCount}…`}
+            </span>
           </button>
         ) : (
           <button

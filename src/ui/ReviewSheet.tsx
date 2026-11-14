@@ -29,7 +29,8 @@ const preview = (body: string) =>
     .trim();
 
 function copyAll() {
-  const { drafts, files } = st.get();
+  const { files } = st.get();
+  const drafts = st.get().drafts.filter((d) => !d.proposal);
   copy(
     draftsAsMarkdown(
       drafts,
@@ -52,13 +53,26 @@ const VERDICTS: { value: ReviewEvent; label: string }[] = [
 /** Hands the comments to Claude instead of (or before) posting them. */
 function ApplyButton({ primary = false }: { primary?: boolean }) {
   const count = st.useStore(
-    (s) => s.drafts.filter((d) => !d.replyTo && (d.body.trim() || d.suggestion !== null)).length,
+    (s) => s.drafts.filter((d) => !d.replyTo && !d.proposal && (d.body.trim() || d.suggestion !== null)).length,
   );
   const running = st.useStore((s) => s.agent?.state === "running");
   return (
     <Tooltip label="Apply comments with Claude" keys="Mod+Shift+a" side="top">
       <Button tone={primary ? "primary" : "secondary"} disabled={!count || running} onClick={() => void agent.apply()}>
         <Sparks width={14} height={14} /> {running ? "Applying…" : "Apply with Claude"}
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** Claude reads the whole diff and proposes comments; nothing posts until you accept it. */
+function CoReviewButton() {
+  const busy = st.useStore((s) => s.agent?.state === "running" || s.job?.state === "running");
+  const reviewing = st.useStore((s) => s.job?.kind === "review" && s.job.state === "running");
+  return (
+    <Tooltip label="Claude reviews the diff and proposes comments for you to accept" side="top">
+      <Button tone="secondary" disabled={busy} onClick={() => void agent.coreview()}>
+        <Sparks width={14} height={14} /> {reviewing ? "Reviewing…" : "Co-review"}
       </Button>
     </Tooltip>
   );
@@ -74,7 +88,8 @@ export function ReviewSheet() {
   const [posting, setPosting] = useState(false);
   const pr = gh?.status === "ready" ? gh : null;
   const behind = pr && (pr.local.dirty || pr.local.headSha !== pr.pr.headSha);
-  const postable = drafts.filter((d) => d.body.trim() || d.suggestion !== null).length;
+  // Claude's proposals don't post until accepted.
+  const postable = drafts.filter((d) => !d.proposal && (d.body.trim() || d.suggestion !== null)).length;
 
   async function post() {
     if (!pr || posting || (!postable && !summary.trim() && event === "COMMENT")) return;
@@ -192,6 +207,11 @@ export function ReviewSheet() {
                             <span className="mt-px w-12 shrink-0 font-mono text-[11.5px] text-ink-3 tabular-nums">
                               {where(d)}
                             </span>
+                            {d.proposal ? (
+                              <Tooltip label="Claude's proposal: accept it on the card to post it">
+                                <Sparks width={13} height={13} className="mt-0.5 shrink-0 text-accent-ink" />
+                              </Tooltip>
+                            ) : null}
                             <span className="min-w-0 flex-1">
                               <span className="flex items-center gap-1.5">
                                 {label ? (
@@ -246,6 +266,7 @@ export function ReviewSheet() {
                     <IconButton label="Copy as Markdown" onClick={copyAll} side="top">
                       <Copy />
                     </IconButton>
+                    <CoReviewButton />
                     <ApplyButton />
                     <Button
                       tone="primary"
@@ -269,6 +290,7 @@ export function ReviewSheet() {
                 <Button tone="secondary" onClick={copyAll} disabled={!drafts.length}>
                   <Copy width={14} height={14} /> Copy as Markdown
                 </Button>
+                <CoReviewButton />
                 <ApplyButton primary />
               </footer>
             )}

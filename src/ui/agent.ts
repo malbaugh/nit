@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRun } from "../types";
+import type { AgentEvent, AgentRun, Job } from "../types";
 import { api } from "./api";
 import * as st from "./state";
 
@@ -28,6 +28,84 @@ async function finished(run: AgentRun) {
   );
 }
 
+function onJob(job: Job) {
+  const prev = st.get().job;
+  const fresh = prev?.id !== job.id;
+  st.set((s) => ({ job, agentActivity: fresh ? [] : s.agentActivity }));
+  if (prev?.id === job.id && prev.state === "running" && job.state !== "running") void jobFinished(job);
+}
+
+async function jobFinished(job: Job) {
+  if (job.state === "failed") return st.toast(`Claude couldn't finish: ${job.error ?? "unknown error"}`);
+  if (job.state === "stopped" || job.kind !== "review") return;
+  await st.load(); // the proposals are drafts now
+  const dropped = job.dropped.length ? ` · ${job.dropped.length} dropped by checks` : "";
+  if (!job.found) return st.toast(`Claude found nothing worth raising${dropped}`);
+  st.notify(`Claude proposed ${job.found} ${job.found === 1 ? "comment" : "comments"}${dropped}`, {
+    label: "Review",
+    run: () => {
+      const first = st.orderedDrafts().find((d) => d.proposal);
+      if (first) st.focusDraft(first.id);
+    },
+  });
+}
+
+/** Claude reviews the whole diff; what survives nit's checks arrives as proposed comments. */
+export async function coreview() {
+  try {
+    const { job } = await api.coreview();
+    st.set({ job, agentActivity: [], reviewOpen: false });
+  } catch (e) {
+    st.toast(e instanceof Error ? e.message : "Couldn't start the co-review.");
+  }
+}
+
+/** Opens the ask box on the selected lines (or the cursor's line). */
+export function startAsk() {
+  const file = st.currentFile();
+  const sel = st.selection();
+  if (!file || !sel || st.get().browse) return;
+  const path = sel.side === "deletions" ? (file.prevName ?? file.name) : file.name;
+  st.set({ asking: { path, side: sel.side, start: sel.start, end: sel.end }, peek: null });
+}
+
+/** Sends the question; a follow-up continues the same conversation. */
+export async function ask(question: string) {
+  const at = st.get().asking;
+  if (!at || !question.trim()) return;
+  const prev = st.get().job;
+  const followUp =
+    prev?.kind === "ask" && prev.at && prev.at.path === at.path && prev.at.start === at.start && prev.at.end === at.end
+      ? prev.sessionId
+      : null;
+  try {
+    const { job } = await api.ask({ ...at, question, followUp });
+    st.set({ job, agentActivity: [] });
+  } catch (e) {
+    st.toast(e instanceof Error ? e.message : "Couldn't ask Claude.");
+  }
+}
+
+/** Turns the answer into your draft comment on the same lines, open to edit. */
+export function commentFromAnswer() {
+  const { asking: at, job } = st.get();
+  if (!at || job?.kind !== "ask" || !job.answer.trim()) return;
+  st.set({
+    anchor: at.start === at.end ? null : { side: at.side, line: at.start },
+    cursor: { side: at.side, line: at.end },
+    asking: null,
+  });
+  st.startComment();
+  const id = st.get().editing;
+  if (id) st.updateDraft(id, { body: job.answer.trim() });
+}
+
+/** Accepting makes Claude's proposal your draft: it posts and applies like any other. */
+export function accept(id: string) {
+  const d = st.get().drafts.find((x) => x.id === id);
+  if (d?.proposal) st.replaceDraft({ ...d, proposal: null });
+}
+
 /** Follows the server's agent stream for the life of the page; reconnects on its own. */
 export function connect() {
   void api.agent().then(
@@ -35,9 +113,16 @@ export function connect() {
     () => {},
   );
   const source = new EventSource("/api/agent/events");
+  void api.job().then(
+    ({ job }) => job && st.set({ job }),
+    () => {},
+  );
   source.onmessage = (m) => {
     const e = JSON.parse(m.data) as AgentEvent;
     if (e.type === "run") return onRun(e.run);
+    if (e.type === "job") return onJob(e.job);
+    if (e.type === "delta")
+      return st.set((s) => (s.job?.state === "running" ? { job: { ...s.job, answer: s.job.answer + e.text } } : {}));
     const item =
       e.type === "tool"
         ? { kind: "tool" as const, tool: e.tool, target: e.target }

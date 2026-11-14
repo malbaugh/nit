@@ -1,6 +1,16 @@
 import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pierre/diffs";
 import { useSyncExternalStore } from "react";
-import type { AgentRun, Draft, FileContents, GitHubState, Location, ReviewData, Side, Symbol as Sym } from "../types";
+import type {
+  AgentRun,
+  Draft,
+  FileContents,
+  GitHubState,
+  Job,
+  Location,
+  ReviewData,
+  Side,
+  Symbol as Sym,
+} from "../types";
 import { api } from "./api";
 import { type Row, rows, treeOrder } from "./lines";
 import { toasts } from "./toasts";
@@ -70,6 +80,10 @@ type State = {
   agent: AgentRun | null;
   agentActivity: AgentActivity[];
   agentOpen: boolean;
+  /** Claude's co-review or question in progress, or the last one. */
+  job: Job | null;
+  /** The lines an "Ask Claude" box is open on, before (or between) questions. */
+  asking: { path: string; side: Side; start: number; end: number } | null;
   /** "agent" shows only the last pass's changes instead of the review's diff. */
   view: "review" | "agent";
   /** A draft's lines being edited in the diff to make its suggestion (suggest.ts). */
@@ -117,6 +131,8 @@ let state: State = {
   agent: null,
   agentActivity: [],
   agentOpen: false,
+  job: null,
+  asking: null,
   view: "review",
   suggesting: null,
   widths: { files: savedLayout.files ?? DEFAULT_WIDTHS.files, outline: savedLayout.outline ?? DEFAULT_WIDTHS.outline },
@@ -509,6 +525,12 @@ export function updateDraft(id: string, patch: Partial<Pick<Draft, "body" | "sug
   const next = { ...current, ...patch, updatedAt: Date.now() };
   set((s) => ({ drafts: s.drafts.map((d) => (d.id === id ? next : d)) }));
   if (hasContent(next)) persist(next);
+}
+
+/** Replaces a draft wholesale and saves it now (accepting Claude's proposal). */
+export function replaceDraft(next: Draft) {
+  set((s) => ({ drafts: s.drafts.map((d) => (d.id === next.id ? next : d)) }));
+  persist({ ...next, updatedAt: Date.now() }, 0);
 }
 
 export function finishEditing() {

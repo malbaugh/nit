@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { AgentRun, Draft } from "./types";
+import type { AgentRun, Draft, Proposal } from "./types";
 
 export function dataDir() {
   return process.env.NIT_DATA_DIR ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local/share"), "nit");
@@ -18,6 +18,7 @@ type DraftRow = {
   suggestion: string | null;
   anchor: string;
   reply_to: string | null;
+  proposal: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -32,6 +33,7 @@ const toDraft = (r: DraftRow): Draft => ({
   suggestion: r.suggestion,
   anchor: JSON.parse(r.anchor),
   replyTo: r.reply_to,
+  proposal: r.proposal ? (JSON.parse(r.proposal) as Proposal) : null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -66,6 +68,13 @@ export function openStore(review: string) {
       .some((c) => c.name === "reply_to")
   )
     db.run("alter table draft add column reply_to text");
+  if (
+    !db
+      .query<{ name: string }, []>("select name from pragma_table_info('draft')")
+      .all()
+      .some((c) => c.name === "proposal")
+  )
+    db.run("alter table draft add column proposal text");
   db.run(`create table if not exists viewed (
     review text not null,
     path text not null,
@@ -89,11 +98,11 @@ export function openStore(review: string) {
   const listDrafts = db.query<DraftRow, [string]>("select * from draft where review = ? order by path, start_line");
   const getDraft = db.query<DraftRow, [string, string]>("select * from draft where review = ? and id = ?");
   const upsert =
-    db.query(`insert into draft (id, review, path, side, start_line, end_line, body, suggestion, anchor, reply_to, created_at, updated_at)
-    values ($id, $review, $path, $side, $start, $end, $body, $suggestion, $anchor, $replyTo, $createdAt, $updatedAt)
+    db.query(`insert into draft (id, review, path, side, start_line, end_line, body, suggestion, anchor, reply_to, proposal, created_at, updated_at)
+    values ($id, $review, $path, $side, $start, $end, $body, $suggestion, $anchor, $replyTo, $proposal, $createdAt, $updatedAt)
     on conflict (id) do update set body = excluded.body, suggestion = excluded.suggestion,
       start_line = excluded.start_line, end_line = excluded.end_line, side = excluded.side,
-      anchor = excluded.anchor, updated_at = excluded.updated_at
+      anchor = excluded.anchor, proposal = excluded.proposal, updated_at = excluded.updated_at
     where draft.review = excluded.review`);
   const remove = db.query("delete from draft where review = ? and id = ?");
   const listViewed = db.query<{ path: string }, [string]>("select path from viewed where review = ?");
@@ -107,7 +116,13 @@ export function openStore(review: string) {
       return row ? toDraft(row) : null;
     },
     saveDraft: (d: Draft) => {
-      upsert.run({ ...d, review, anchor: JSON.stringify(d.anchor), replyTo: d.replyTo ?? null });
+      upsert.run({
+        ...d,
+        review,
+        anchor: JSON.stringify(d.anchor),
+        replyTo: d.replyTo ?? null,
+        proposal: d.proposal ? JSON.stringify(d.proposal) : null,
+      });
     },
     deleteDraft: (id: string) => {
       remove.run(review, id);
