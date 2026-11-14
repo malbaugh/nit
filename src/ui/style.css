@@ -167,16 +167,17 @@ diffs-container {
   --diffs-deletion-color-override: var(--red);
 }
 
-/* Highlighted code inside comments (Shiki dual themes). */
-.md pre[style*="--shiki-dark"],
-.md pre[style*="--shiki-dark"] span {
-  color: var(--shiki-dark);
-  /* biome-ignore lint/complexity/noImportantStyles: Shiki writes inline backgrounds */
+/* Highlighted code blocks (comments, peeks, search preview): Highlights writes both themes'
+   colours as variables; pick by scheme. */
+pre[style*="--hls-dark"],
+pre[style*="--hls-dark"] span {
+  color: var(--hls-dark);
+  /* biome-ignore lint/complexity/noImportantStyles: the highlighter writes inline backgrounds */
   background-color: transparent !important;
 }
-[data-scheme="light"] .md pre[style*="--shiki-dark"],
-[data-scheme="light"] .md pre[style*="--shiki-dark"] span {
-  color: var(--shiki-light);
+[data-scheme="light"] pre[style*="--hls-dark"],
+[data-scheme="light"] pre[style*="--hls-dark"] span {
+  color: var(--hls-light);
 }
 
 /* Numbered code (definition and symbol snippets). */

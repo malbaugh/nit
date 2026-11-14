@@ -3,6 +3,13 @@ import { useEffect, useId, useState } from "react";
 import { useTheme } from "./theme";
 
 type Themes = { dark: string; light: string };
+
+/**
+ * Pierre's Highlights engine (WebAssembly lexers, synchronous) for every code view. Shiki JS
+ * blocked the main thread 70–270ms per file switch; Highlights brought that to zero. One
+ * engine per page: Pierre refuses to mix them.
+ */
+export const HIGHLIGHTER = "highlights" as const;
 const cache = new Map<string, Promise<string | null>>();
 
 export const langFor = (path: string) => getFiletypeFromFileName(path) ?? "";
@@ -12,7 +19,11 @@ function highlight(source: string, lang: string, themes: Themes) {
   const key = `${themes.dark}\u0000${themes.light}\u0000${lang}\u0000${source}`;
   let p = cache.get(key);
   if (!p) {
-    p = getSharedHighlighter({ themes: [themes.dark, themes.light], langs: [lang as SupportedLanguages] })
+    p = getSharedHighlighter({
+      themes: [themes.dark, themes.light],
+      langs: [lang as SupportedLanguages],
+      preferredHighlighter: HIGHLIGHTER,
+    })
       .then((h) => h.codeToHtml(source, { lang, themes, defaultColor: false }))
       .catch((e: unknown) => {
         console.warn(`nit: could not highlight ${lang}`, e);

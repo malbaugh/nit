@@ -213,6 +213,7 @@ export async function load() {
     if (file && state.fullFiles.has(file.name)) await hydrate(state.current);
     if (currentFile()?.name !== before || rowIndex(fileRows(), state.cursor) === -1) resetCursor();
     hydrateAround(state.current);
+    unfoldForDrafts(state.current);
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });
   }
@@ -235,6 +236,17 @@ function resetCursor() {
   });
 }
 
+/** Drafts are never hidden: a file with one on a folded line opens whole. */
+function unfoldForDrafts(index: number) {
+  const f = state.files[index];
+  if (!f || state.fullFiles.has(f.name)) return;
+  const visible = new Set(rows(f).map((r) => `${r.side}:${r.line}`));
+  const hidden = state.drafts.some(
+    (d) => d.path === f.name && !d.replyTo && d.start > 0 && !visible.has(`${d.side}:${d.end}`),
+  );
+  if (hidden) void setFullFile(f.name, true);
+}
+
 export function openFile(index: number) {
   if (index < 0 || index >= state.files.length) return;
   if (index === state.current) {
@@ -244,6 +256,7 @@ export function openFile(index: number) {
   set({ current: index, focused: null, browse: null, peek: null });
   resetCursor();
   hydrateAround(index);
+  unfoldForDrafts(index);
 }
 
 const rowIndex = (r: Row[], p: Point | null) => (p ? r.findIndex((x) => x.side === p.side && x.line === p.line) : -1);

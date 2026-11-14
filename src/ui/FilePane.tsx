@@ -3,6 +3,7 @@ import { File } from "@pierre/diffs/react";
 import { ArrowLeft, NavArrowRight, SidebarExpand, Xmark } from "iconoir-react/regular";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { HIGHLIGHTER } from "./Code";
 import { DIFF_CSS, linkKey, revealLine } from "./DiffPane";
 import * as nav from "./nav";
 import { PeekAnnotation } from "./Peek";
@@ -66,6 +67,7 @@ export function FilePane() {
       theme: { dark: darkThemeName, light: lightThemeName },
       themeType: resolvedColorScheme,
       disableFileHeader: true,
+      preferredHighlighter: HIGHLIGHTER,
       lineHoverHighlight: "number" as const,
       unsafeCSS: DIFF_CSS,
       onTokenEnter: (t: TokenEventBase, e: PointerEvent) => {

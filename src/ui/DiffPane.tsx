@@ -10,6 +10,7 @@ import {
   ViewColumns2,
 } from "iconoir-react/regular";
 import { useCallback, useEffect, useMemo } from "react";
+import { HIGHLIGHTER } from "./Code";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
 import * as nav from "./nav";
@@ -93,6 +94,7 @@ export function DiffPane() {
       theme: { dark: darkTheme, light: lightTheme },
       themeType: scheme,
       diffStyle: style,
+      preferredHighlighter: HIGHLIGHTER,
       expandUnchanged: full,
       diffIndicators: "bars" as const,
       lineDiffType: "word-alt" as const,
