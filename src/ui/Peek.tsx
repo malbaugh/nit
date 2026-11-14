@@ -33,14 +33,14 @@ function LocationRow({
   name,
   active,
   onPick,
-  onHover,
+  onSelect,
   showText,
 }: {
   loc: Location;
   name: string | null;
   active: boolean;
   onPick: () => void;
-  onHover: () => void;
+  onSelect: () => void;
   showText: boolean;
 }) {
   return (
@@ -49,9 +49,10 @@ function LocationRow({
       role="option"
       tabIndex={-1}
       aria-selected={active}
-      onMouseMove={onHover}
-      onClick={onPick}
-      className={`flex h-8 cursor-default items-center gap-2.5 rounded-control px-2.5 ${active ? "bg-hover-2" : ""}`}
+      // A click selects (and previews); Enter or a double-click opens. Hover changes nothing.
+      onClick={onSelect}
+      onDoubleClick={onPick}
+      className={`flex h-8 cursor-default items-center gap-2.5 rounded-control px-2.5 ${active ? "bg-hover-2" : "[@media(hover:hover)]:hover:bg-hover"}`}
     >
       <span className="flex min-w-0 shrink-0 items-baseline gap-1.5" style={{ maxWidth: showText ? "45%" : "100%" }}>
         <span className={`shrink-0 ${active ? "text-ink" : "text-ink-2"}`}>{basename(loc.path)}</span>
@@ -116,12 +117,7 @@ export function PeekAnnotation() {
     const it = items[i];
     if (!it) return;
     if ("name" in it && peek.kind === "pick") return void nav.lookup(peek.mode, { name: it.name });
-    if ("loc" in it && it.loc) {
-      if (!nav.openLocation(it.loc)) {
-        if (peek.kind === "references") st.toast(`${basename(it.loc.path)} isn't part of this review`);
-        setActive(i);
-      }
-    }
+    if ("loc" in it && it.loc) nav.openLocation(it.loc);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -190,7 +186,6 @@ export function PeekAnnotation() {
                   key={it.name}
                   type="button"
                   onClick={() => void nav.lookup(peek.mode, { name: it.name })}
-                  onMouseMove={() => setActive(i)}
                   className={`h-7 rounded-control px-2 font-mono text-[12.5px] transition-[background-color,color] duration-100 ${
                     i === active
                       ? "bg-accent-tint text-ink shadow-[inset_0_0_0_1px_var(--accent)]"
@@ -215,7 +210,7 @@ export function PeekAnnotation() {
                         name={name}
                         active={i === active}
                         onPick={() => pick(i)}
-                        onHover={() => setActive(i)}
+                        onSelect={() => setActive(i)}
                         showText={false}
                       />
                     ))}
@@ -259,7 +254,7 @@ export function PeekAnnotation() {
                     name={name}
                     active={i === active}
                     onPick={() => pick(i)}
-                    onHover={() => setActive(i)}
+                    onSelect={() => setActive(i)}
                     showText
                   />
                 ))}
@@ -273,7 +268,7 @@ export function PeekAnnotation() {
                       name={name}
                       active={i === active}
                       onPick={() => pick(i)}
-                      onHover={() => setActive(i)}
+                      onSelect={() => setActive(i)}
                       showText
                     />
                   );
@@ -301,7 +296,7 @@ export function PeekAnnotation() {
                           name={name}
                           active={i === active}
                           onPick={() => pick(i)}
-                          onHover={() => setActive(i)}
+                          onSelect={() => setActive(i)}
                           showText
                         />
                       );

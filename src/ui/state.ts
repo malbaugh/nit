@@ -6,6 +6,8 @@ import { type Row, rows } from "./lines";
 import { toasts } from "./toasts";
 
 export type Point = { side: Side; line: number };
+/** A file outside the review, opened read-only from a definition or reference. */
+export type Browse = { path: string; line: number; lines: number };
 export type Style = "split" | "unified";
 
 /** The inline panel under a line for definitions, references, or picking which word to look up. */
@@ -52,6 +54,7 @@ type State = {
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
   settingsOpen: boolean;
+  browse: Browse | null;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
   /** Files shown whole (every unchanged line expanded), by path. */
@@ -94,6 +97,7 @@ let state: State = {
   outlineOpen: stored("nit.outline") !== "0",
   reviewOpen: false,
   settingsOpen: false,
+  browse: null,
   github: null,
   fullFiles: new Set(),
 };
@@ -218,8 +222,12 @@ function resetCursor() {
 }
 
 export function openFile(index: number) {
-  if (index < 0 || index >= state.files.length || index === state.current) return;
-  set({ current: index, focused: null });
+  if (index < 0 || index >= state.files.length) return;
+  if (index === state.current) {
+    if (state.browse) set({ browse: null, peek: null }); // back to the review's copy of the file
+    return;
+  }
+  set({ current: index, focused: null, browse: null, peek: null });
   resetCursor();
   hydrateAround(index);
 }
@@ -227,6 +235,8 @@ export function openFile(index: number) {
 const rowIndex = (r: Row[], p: Point | null) => (p ? r.findIndex((x) => x.side === p.side && x.line === p.line) : -1);
 
 export function moveCursor(delta: number, extend = false) {
+  const b = state.browse;
+  if (b) return set({ browse: { ...b, line: Math.min(Math.max(1, b.line + delta), Math.max(1, b.lines)) } });
   const r = fileRows();
   if (!r.length) return;
   const i = Math.min(r.length - 1, Math.max(0, rowIndex(r, state.cursor) + delta));

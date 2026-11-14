@@ -1,7 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { CodeBracketsSquare, Page, Search } from "iconoir-react/regular";
 import { type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
-import { actions } from "./actions";
+import { actions, available } from "./actions";
 import { stats } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
@@ -74,7 +74,7 @@ function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) 
       };
     });
     const actionItems: Item[] = actions
-      .filter((a) => !a.hidden && a.id !== "files" && (!a.when || a.when()))
+      .filter((a) => !a.hidden && a.id !== "files" && available(a))
       .map((a) => ({ id: a.id, group: a.group, label: a.label, keys: a.keys, icon: a.icon, run: a.run }));
     const symbolItems: Item[] = (outline?.new ?? []).map((sym) => ({
       id: `sym:${sym.line}:${sym.name}`,

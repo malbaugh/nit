@@ -59,17 +59,26 @@ function entries(symbols: Sym[], old: Sym[] | null, added: Set<number>, removed:
 }
 
 export function OutlinePanel() {
-  const file = st.useStore((s) => st.currentFile(s));
-  const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
-  const cursor = st.useStore((s) => s.cursor);
+  const browse = st.useStore((s) => s.browse);
+  // A file opened outside the review has symbols but no changes.
+  const file = st.useStore((s) => (s.browse ? undefined : st.currentFile(s)));
+  const path = browse?.path ?? file?.name;
+  const outline = st.useStore((s) => (path ? s.outlines[path] : undefined));
+  const reviewCursor = st.useStore((s) => s.cursor);
+  const browseLine = browse?.line;
+  const cursor = useMemo(
+    () => (browseLine ? { side: "additions" as const, line: browseLine } : reviewCursor),
+    [browseLine, reviewCursor],
+  );
   const [onlyChanged, setOnlyChanged] = useState(false);
 
   useEffect(() => {
-    if (file) nav.loadOutline(file);
+    if (file) nav.loadOutline(file.name, file.prevName);
   }, [file]);
 
   const view = useMemo(() => {
-    if (!file || !outline) return null;
+    if (!outline) return null;
+    if (!file) return { all: entries(outline.new ?? [], null, new Set(), new Set()), removed: [], changedCount: 0 };
     const { added, removed: gone } = changedLines(file);
     const all = entries(outline.new ?? [], file.type === "new" ? [] : outline.old, added, gone);
     const present = new Set((outline.new ?? []).map(key));

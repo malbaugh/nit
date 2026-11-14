@@ -6,22 +6,26 @@ import * as st from "./state";
 
 // ---------- back stack (⌘[)
 
-const history: { file: string; cursor: st.Point | null }[] = [];
+type Place = { file: string; cursor: st.Point | null } | { browse: st.Browse };
+const history: Place[] = [];
 
 function remember() {
+  const { browse } = st.get();
   const f = st.currentFile();
-  if (!f) return;
-  history.push({ file: f.name, cursor: st.get().cursor });
+  if (browse) history.push({ browse });
+  else if (f) history.push({ file: f.name, cursor: st.get().cursor });
+  else return;
   if (history.length > 100) history.shift();
 }
 
 export function goBack() {
   const h = history.pop();
-  if (!h) return;
+  if (!h) return void (st.get().browse && st.set({ browse: null, peek: null }));
+  if ("browse" in h) return st.set({ browse: h.browse, peek: null });
   const i = st.get().files.findIndex((f) => f.name === h.file);
   if (i === -1) return;
-  if (i !== st.get().current) st.openFile(i);
-  st.set({ cursor: h.cursor, anchor: null, peek: null });
+  st.openFile(i);
+  st.set({ cursor: h.cursor, anchor: null, peek: null, browse: null });
 }
 
 // ---------- outlines
@@ -29,14 +33,14 @@ export function goBack() {
 const pending = new Map<string, Promise<void>>();
 
 /** Fetches a file's symbols once per file version (the store clears them on reload). */
-export function loadOutline(file: FileDiffMetadata) {
-  if (st.get().outlines[file.name] || pending.has(file.name)) return;
+export function loadOutline(path: string, prevName?: string) {
+  if (st.get().outlines[path] || pending.has(path)) return;
   const p = api
-    .symbols(file.name, file.prevName)
-    .then((o) => st.set((s) => ({ outlines: { ...s.outlines, [file.name]: o } })))
-    .catch(() => st.set((s) => ({ outlines: { ...s.outlines, [file.name]: { new: null, old: null } } })))
-    .finally(() => pending.delete(file.name));
-  pending.set(file.name, p);
+    .symbols(path, prevName)
+    .then((o) => st.set((s) => ({ outlines: { ...s.outlines, [path]: o } })))
+    .catch(() => st.set((s) => ({ outlines: { ...s.outlines, [path]: { new: null, old: null } } })))
+    .finally(() => pending.delete(path));
+  pending.set(path, p);
 }
 
 /** Symbols that contain a line, outermost first. */
@@ -57,9 +61,12 @@ const pathFor = (file: FileDiffMetadata, side: Side) =>
  */
 export async function lookup(mode: "definition" | "references", by?: { name: string } | { col: number }) {
   const file = st.currentFile();
-  const cursor = st.get().cursor;
-  if (!file || !cursor) return;
-  const at = { path: pathFor(file, cursor.side), side: cursor.side, line: cursor.line };
+  const { browse } = st.get();
+  // In a file outside the review the cursor is the browse line, always on the working copy.
+  const cursor: st.Point | null = browse ? { side: "additions", line: browse.line } : st.get().cursor;
+  if (!cursor || (!file && !browse)) return;
+  const path = browse ? browse.path : pathFor(file as FileDiffMetadata, cursor.side);
+  const at = { path, side: cursor.side, line: cursor.line };
   const base = { at: cursor, path: at.path };
 
   let target = by;
@@ -83,7 +90,8 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
 
   try {
     if (mode === "definition") {
-      // Like an editor: one definition in this review is a jump, not a card. The loading card
+      // Like an editor: one definition is a jump, not a card (read-only when it's outside
+      // the review). The loading card
       // only shows if the lookup is slow, so a jump doesn't flash one.
       const name = "name" in target ? target.name : null;
       const slow = setTimeout(
@@ -91,7 +99,7 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
         150,
       );
       const r = await api.definition(at, target).finally(() => clearTimeout(slow));
-      if (r.results.length === 1 && openLocation(r.results[0])) return;
+      if (r.results.length === 1) return openLocation(r.results[0]);
       st.set({ peek: { ...base, kind: "definition", name: r.name, results: r.results, status: "ready" } });
     } else {
       const name = (target as { name: string }).name;
@@ -123,7 +131,7 @@ export const closePeek = () => st.set({ peek: null });
 async function goToLine(index: number, side: Side, line: number) {
   const files = st.get().files;
   remember();
-  if (index !== st.get().current) st.openFile(index);
+  st.openFile(index); // also leaves a file opened outside the review
   const path = files[index].name;
   const visible = rows(st.get().files[index], st.get().fullFiles.has(path)).some(
     (x) => x.side === side && x.line === line,
@@ -132,16 +140,18 @@ async function goToLine(index: number, side: Side, line: number) {
   st.set({ cursor: { side, line }, anchor: null, peek: null, focused: null });
 }
 
-/** Moves to a location when its file is in this review. Returns false when it isn't. */
+/** Moves to a location: in the review's diff when the file is part of it, else read-only. */
 export function openLocation(loc: Location) {
   const index = st.get().files.findIndex((f) => f.name === loc.path);
-  if (index === -1) return false;
-  void goToLine(index, "additions", loc.line);
-  return true;
+  if (index !== -1) return void goToLine(index, "additions", loc.line);
+  remember();
+  st.set({ browse: { path: loc.path, line: loc.line, lines: 0 }, peek: null, anchor: null, focused: null });
 }
 
 /** Outline click: go to the symbol in the code, unfolding the file if it's outside the changes. */
 export async function revealSymbol(sym: Sym, side: Side) {
+  const { browse } = st.get();
+  if (browse) return st.set({ browse: { ...browse, line: sym.nameLine } });
   const index = st.get().current;
   if (st.get().files[index]) await goToLine(index, side, sym.nameLine);
 }

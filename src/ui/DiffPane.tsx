@@ -40,7 +40,7 @@ function findRow(side: "additions" | "deletions", line: number) {
  * view sideways). Off screen (a jump) centres it; near an edge (j/k) nudges it. A freshly
  * remounted diff draws a frame or two late, so it retries briefly.
  */
-function revealLine(side: "additions" | "deletions", line: number, tries = 10) {
+export function revealLine(side: "additions" | "deletions", line: number, tries = 10) {
   const el = findRow(side, line);
   const scroller = document.querySelector<HTMLElement>("[data-diff-scroll]");
   if (!el || !scroller) {
@@ -57,7 +57,7 @@ function revealLine(side: "additions" | "deletions", line: number, tries = 10) {
 }
 
 // Inside Pierre's shadow root: the cursor row, quiet separators, and the comment gutter button.
-const DIFF_CSS = `
+export const DIFF_CSS = `
 [data-line][data-selected-line] { box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 999px var(--accent-tint); }
 [data-separator-content] { font-family: var(--diffs-header-font-family); font-size: 12px; letter-spacing: -0.005em; color: var(--ink-3); }
 [data-expand-button] { color: var(--ink-3); transition: color 100ms, background-color 100ms; }
@@ -67,7 +67,7 @@ const DIFF_CSS = `
 `;
 
 /** ⌘ (Ctrl elsewhere) held over a word underlines it, like an editor's go-to-definition link. */
-const linkKey = (e: MouseEvent) => e.metaKey || e.ctrlKey;
+export const linkKey = (e: MouseEvent) => e.metaKey || e.ctrlKey;
 
 const toPoint = (side: SelectedLineRange["side"], line: number) => ({ side: side ?? ("additions" as const), line });
 
@@ -130,7 +130,7 @@ export function DiffPane() {
   const sidebar = st.useStore((s) => s.sidebar);
 
   useEffect(() => {
-    if (file) nav.loadOutline(file);
+    if (file) nav.loadOutline(file.name, file.prevName);
   }, [file]);
 
   const annotations = useMemo<DiffLineAnnotation<Meta>[]>(() => {

@@ -38,6 +38,26 @@ export type Action = {
   hidden?: boolean;
 };
 
+// In a file opened outside the review only navigation applies: nothing there to comment on.
+const BROWSE = new Set([
+  "line-down",
+  "line-up",
+  "definition",
+  "references",
+  "back",
+  "outline",
+  "files",
+  "sidebar",
+  "settings",
+  "review",
+  "next-file",
+  "prev-file",
+  "reload",
+]);
+
+/** Whether an action can run right now (the palette lists only these). */
+export const available = (a: Action) => (!a.when || a.when()) && (!st.get().browse || BROWSE.has(a.id));
+
 const focusedDraft = () => st.get().drafts.find((d) => d.id === st.get().focused);
 const focusedThread = () => {
   const gh = st.get().github;
@@ -348,6 +368,7 @@ export function handleKey(e: KeyboardEvent) {
   if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen) return;
   if (e.key === "Escape") {
     if (s.peek) nav.closePeek();
+    else if (s.browse) nav.goBack();
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
     return;
   }
@@ -370,7 +391,7 @@ export function handleKey(e: KeyboardEvent) {
   }
   // The first action for this key that applies right now (r replies on a thread, else reloads).
   const action = actions.find(
-    (a) => (a.keys.includes(name) || (name === "Delete" && a.keys.includes("Backspace"))) && (!a.when || a.when()),
+    (a) => (a.keys.includes(name) || (name === "Delete" && a.keys.includes("Backspace"))) && available(a),
   );
   if (!action) return;
   e.preventDefault();
