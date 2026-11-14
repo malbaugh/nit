@@ -22,7 +22,7 @@ export async function start(draftId: string) {
   if (index === -1) return;
   st.openFile(index);
   await st.hydrate(index); // the editor needs the whole new file
-  if (st.get().files[index]?.isPartial) return st.toast("Couldn't load the file to edit it.");
+  if (st.get().files[index]?.isPartial) return st.fail("Couldn't load the file to edit it.");
   decision = "cancel";
   st.set({
     editing: null,

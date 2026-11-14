@@ -1,5 +1,11 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import { createSdkMcpServer, type HookCallback, query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import {
+  createSdkMcpServer,
+  type HookCallback,
+  query,
+  type SDKAssistantMessageError,
+  type SDKMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { FINDINGS_SCHEMA } from "./coreview";
 import { within } from "./git";
 import type { Guidelines } from "./guidelines";
@@ -16,6 +22,25 @@ import type { AgentEvent, AgentOutcome, AgentRun, Draft, Job } from "./types";
 
 const TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
 const READ_TOOLS = ["Read", "Glob", "Grep"];
+
+// What to do about the errors a reviewer can fix; the rest keep Claude Code's own words.
+const WHY: Partial<Record<SDKAssistantMessageError, string>> = {
+  authentication_failed:
+    "Claude isn't signed in, or its login expired. In a terminal, run claude and sign in with /login, then try again.",
+  rate_limit: "You've reached your Claude usage limit. Try again when it resets.",
+  overloaded: "Claude is overloaded right now. Try again in a minute.",
+  billing_error: "Your Claude account has a billing problem. Check it at claude.ai, then try again.",
+};
+
+/** The failure a message reports (an API error, or a turn that ended on one), else null. */
+export function failureOf(m: SDKMessage): string | null {
+  if (m.type === "assistant" && m.error) {
+    const text = m.message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(" ");
+    return WHY[m.error] ?? (text.trim() || m.error);
+  }
+  if (m.type === "result" && m.is_error) return m.subtype === "success" ? m.result : m.errors.join("; ") || m.subtype;
+  return null;
+}
 
 const INSTRUCTIONS = `You are applying a reviewer's comments to this checkout. Each comment sits on lines of one file.
 
@@ -190,7 +215,6 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
             tools: TOOLS,
             allowedTools: [...TOOLS, ...context.tools.map((t) => `mcp__nit__${t.name}`)],
             mcpServers: { nit: createSdkMcpServer({ name: "nit", tools: context.tools }) },
-            canUseTool: async (tool) => ({ behavior: "deny", message: `${tool} isn't available in nit.` }),
             settingSources: [],
             systemPrompt: { type: "preset", preset: "claude_code", append: INSTRUCTIONS },
             hooks: { PreToolUse: [{ hooks: [confine] }] },
@@ -203,7 +227,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
         run.state = abort.signal.aborted ? "stopped" : run.error ? "failed" : "done";
       } catch (e) {
         run.state = abort.signal.aborted ? "stopped" : "failed";
-        if (!abort.signal.aborted) run.error = e instanceof Error ? e.message : String(e);
+        if (!abort.signal.aborted) run.error ??= e instanceof Error ? e.message : String(e);
       } finally {
         run.after = await snapshots.take().catch(() => null);
         run.files = run.after ? await snapshots.changed(run.before, run.after).catch(() => []) : [];
@@ -216,6 +240,11 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
     /** Turns one SDK message into progress events and the run's results. */
     read(run: AgentRun, m: SDKMessage) {
       if ("session_id" in m && m.session_id && run.sessionId !== m.session_id) run.sessionId = m.session_id;
+      const failed = failureOf(m);
+      if (failed) {
+        run.error ??= failed;
+        return;
+      }
       if (m.type === "assistant") {
         for (const block of m.message.content) {
           if (block.type === "text" && block.text.trim()) emit({ type: "text", text: block.text.trim() });
@@ -230,7 +259,7 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
         if (m.subtype === "success") {
           const out = (m.structured_output as { outcomes?: AgentOutcome[] } | undefined)?.outcomes ?? [];
           run.outcomes = out.filter((o) => run.drafts.includes(o.id));
-        } else run.error = m.errors.join("; ") || m.subtype;
+        } else run.error ??= m.errors.join("; ") || m.subtype;
       }
     },
 
@@ -285,7 +314,6 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
               tools: READ_TOOLS,
               allowedTools: [...READ_TOOLS, ...names],
               mcpServers: { nit: server },
-              canUseTool: async (t) => ({ behavior: "deny", message: `${t} isn't available in nit.` }),
               settingSources: [],
               systemPrompt: { type: "preset", preset: "claude_code", append: o.instructions },
               hooks: { PreToolUse: [{ hooks: [confineReview] }] },
@@ -297,6 +325,11 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
           });
           for await (const m of messages as AsyncIterable<SDKMessage>) {
             if ("session_id" in m && m.session_id) j.sessionId = m.session_id;
+            const failed = failureOf(m);
+            if (failed) {
+              j.error ??= failed;
+              continue;
+            }
             if (m.type === "stream_event") {
               const e = m.event;
               if (e.type === "content_block_delta" && e.delta.type === "text_delta" && !m.parent_tool_use_id) {
@@ -317,14 +350,14 @@ export function createAgent(root: string, snapshots: Snapshots, store: Store) {
               if (m.subtype === "success") {
                 structured = m.structured_output;
                 if (kind === "ask" && m.result) j.answer = m.result;
-              } else j.error = m.errors.join("; ") || m.subtype;
+              } else j.error ??= m.errors.join("; ") || m.subtype;
             }
           }
           if (!abort.signal.aborted && !j.error) await o.finish?.(structured, j);
           j.state = abort.signal.aborted ? "stopped" : j.error ? "failed" : "done";
         } catch (e) {
           j.state = abort.signal.aborted ? "stopped" : "failed";
-          if (!abort.signal.aborted) j.error = e instanceof Error ? e.message : String(e);
+          if (!abort.signal.aborted) j.error ??= e instanceof Error ? e.message : String(e);
         } finally {
           j.endedAt = Date.now();
           job = null;

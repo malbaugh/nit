@@ -370,7 +370,7 @@ export function setViewed(paths: string[], viewed: boolean) {
   for (const p of paths) viewed ? next.add(p) : next.delete(p);
   set({ viewed: next });
   Promise.all(paths.map((p) => api.setViewed(p, viewed))).catch(() =>
-    toast("Couldn't save viewed state. Is nit still running?"),
+    fail("Couldn't save viewed state. Is nit still running?"),
   );
 }
 
@@ -382,7 +382,7 @@ export function toggleViewed(advance = true) {
   if (now) viewed.add(file.name);
   else viewed.delete(file.name);
   set({ viewed });
-  api.setViewed(file.name, now).catch(() => toast("Couldn't save viewed state. Is nit still running?"));
+  api.setViewed(file.name, now).catch(() => fail("Couldn't save viewed state. Is nit still running?"));
   if (now && advance) {
     const i = state.files.findIndex((f, i) => i > state.current && !viewed.has(f.name));
     const wrap = i === -1 ? state.files.findIndex((f) => !viewed.has(f.name)) : i;
@@ -405,6 +405,11 @@ export function toast(message: string, undo?: () => void) {
   if (undo) lastUndoToast = id;
 }
 /** A toast with an action button (e.g. "Open" after posting). */
+/** Something went wrong: shown longer, with a warning mark, and wrapped instead of cut off. */
+export function fail(message: string) {
+  toasts.add({ title: message, timeout: 8000, data: { error: true } });
+}
+
 export function notify(message: string, action?: { label: string; run: () => void }) {
   toasts.add({
     title: message,
@@ -522,7 +527,7 @@ export function startComment() {
       const d = state.drafts.find((x) => x.id === draft.id);
       if (d && hasContent(d)) persist(d);
     },
-    () => toast("Couldn't read the file. The comment is saved without its line text."),
+    () => fail("Couldn't read the file. The comment is saved without its line text."),
   );
 }
 
@@ -587,7 +592,7 @@ export async function applySuggestion(id: string) {
     toast(`Suggestion applied to ${d.path.split("/").pop()}`);
     await load();
   } catch (e) {
-    toast(e instanceof Error ? e.message : "Couldn't apply the suggestion.");
+    fail(e instanceof Error ? e.message : "Couldn't apply the suggestion.");
   }
 }
 
@@ -669,7 +674,7 @@ export async function setThreadResolved(id: string, resolved: boolean) {
     await api.resolveThread(id, resolved);
   } catch (e) {
     flip(!resolved);
-    toast(e instanceof Error ? e.message : "GitHub didn't accept that.");
+    fail(e instanceof Error ? e.message : "GitHub didn't accept that.");
   }
 }
 

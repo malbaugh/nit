@@ -107,8 +107,9 @@ export function AskAnnotation() {
                   <Markdown source={here.answer} />
                 </Suspense>
               </div>
-            ) : here.state === "failed" ? (
-              <p className="text-[12.5px] text-red">{here.error ?? "Claude couldn't answer."}</p>
+            ) : null}
+            {here.state === "failed" ? (
+              <p className="mt-1 text-[12.5px] text-red">{here.error ?? "Claude couldn't answer."}</p>
             ) : null}
             {here.state === "done" && here.answer ? (
               <div className="mt-2.5 flex items-center gap-1.5">

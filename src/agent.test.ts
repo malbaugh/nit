@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { confineTo } from "./agent";
+import { confineTo, failureOf } from "./agent";
 
 const root = "/repo";
 const call = (hook: ReturnType<typeof confineTo>, tool: string, path: string) =>
@@ -56,4 +56,19 @@ test("a symlink inside the checkout that points out of it is refused", async () 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("an API error says what to do; normal messages aren't failures", () => {
+  type M = Parameters<typeof failureOf>[0];
+  const auth = {
+    type: "assistant",
+    error: "authentication_failed",
+    message: { content: [{ type: "text", text: "Invalid API key · Fix external API key" }] },
+  } as unknown as M;
+  expect(failureOf(auth)).toContain("sign in with /login");
+  const other = { ...auth, error: "server_error" } as unknown as M;
+  expect(failureOf(other)).toBe("Invalid API key · Fix external API key");
+  expect(failureOf({ type: "result", subtype: "success", is_error: true, result: "boom" } as unknown as M)).toBe("boom");
+  expect(failureOf({ type: "result", subtype: "success", is_error: false, result: "ok" } as unknown as M)).toBeNull();
+  expect(failureOf({ type: "assistant", message: { content: [] } } as unknown as M)).toBeNull();
 });

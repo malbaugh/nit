@@ -114,7 +114,7 @@ export function ReviewSheet() {
         );
       }
     } catch (e) {
-      st.toast(e instanceof Error ? e.message : "Couldn't post the review.");
+      st.fail(e instanceof Error ? e.message : "Couldn't post the review.");
     } finally {
       setPosting(false);
     }

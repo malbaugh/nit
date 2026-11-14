@@ -18,7 +18,7 @@ function onRun(run: AgentRun) {
 
 async function finished(run: AgentRun) {
   await st.load(); // the agent's edits are in the review's diff now
-  if (run.state === "failed") return st.toast(`Claude couldn't finish: ${run.error ?? "unknown error"}`);
+  if (run.state === "failed") return st.fail(`Claude couldn't finish: ${run.error ?? "unknown error"}`);
   if (run.state === "stopped") return st.toast("Stopped. What Claude changed so far is kept; undo puts it back.");
   const done = run.outcomes.filter((o) => o.status === "done").length;
   const files = run.files.length;
@@ -36,7 +36,11 @@ function onJob(job: Job) {
 }
 
 async function jobFinished(job: Job) {
-  if (job.state === "failed") return st.toast(`Claude couldn't finish: ${job.error ?? "unknown error"}`);
+  // An open ask box shows its own error.
+  if (job.state === "failed")
+    return job.kind === "ask" && st.get().asking
+      ? undefined
+      : st.fail(`Claude couldn't finish: ${job.error ?? "unknown error"}`);
   if (job.state === "stopped" || job.kind !== "review") return;
   await st.load(); // the proposals are drafts now
   const dropped = job.dropped.length ? ` · ${job.dropped.length} dropped by checks` : "";
@@ -56,7 +60,7 @@ export async function coreview() {
     const { job } = await api.coreview();
     st.set({ job, agentActivity: [], reviewOpen: false });
   } catch (e) {
-    st.toast(e instanceof Error ? e.message : "Couldn't start the co-review.");
+    st.fail(e instanceof Error ? e.message : "Couldn't start the co-review.");
   }
 }
 
@@ -82,7 +86,7 @@ export async function ask(question: string) {
     const { job } = await api.ask({ ...at, question, followUp });
     st.set({ job, agentActivity: [] });
   } catch (e) {
-    st.toast(e instanceof Error ? e.message : "Couldn't ask Claude.");
+    st.fail(e instanceof Error ? e.message : "Couldn't ask Claude.");
   }
 }
 
@@ -138,7 +142,7 @@ export async function apply(ids?: string[]) {
     const { run } = await api.applyAgent(ids);
     st.set({ agent: run, agentActivity: [], agentOpen: true, reviewOpen: false });
   } catch (e) {
-    st.toast(e instanceof Error ? e.message : "Couldn't start Claude.");
+    st.fail(e instanceof Error ? e.message : "Couldn't start Claude.");
   }
 }
 
@@ -158,7 +162,7 @@ export async function undo() {
         : `Undid Claude's changes to ${r.restored.length} ${r.restored.length === 1 ? "file" : "files"}`,
     );
   } catch (e) {
-    st.toast(e instanceof Error ? e.message : "Couldn't undo.");
+    st.fail(e instanceof Error ? e.message : "Couldn't undo.");
   }
 }
 

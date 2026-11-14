@@ -29,7 +29,7 @@ function copyByCommand(text: string) {
 export function copy(text: string, what: string) {
   navigator.clipboard.writeText(text).then(
     () => st.toast(`Copied ${what}`),
-    () => st.toast(copyByCommand(text) ? `Copied ${what}` : "Couldn't copy to the clipboard."),
+    () => (copyByCommand(text) ? st.toast(`Copied ${what}`) : st.fail("Couldn't copy to the clipboard.")),
   );
 }
 

@@ -42,8 +42,14 @@ function Toasts() {
             toast={t}
             className="absolute bottom-0 left-0 flex w-full items-center gap-2.5 rounded-card bg-surface py-2 pr-2 pl-3 text-[13px] text-ink shadow-overlay [transform:translateY(calc(var(--toast-index)*-6px))_scale(calc(1-var(--toast-index)*0.04))] transition-[transform,opacity] duration-200 ease-out-strong data-ending-style:opacity-0 data-limited:opacity-0 data-starting-style:[transform:translateY(8px)] data-starting-style:opacity-0"
           >
-            <Check className="shrink-0 text-green" />
-            <Toast.Title className="min-w-0 flex-1 truncate" />
+            {(t.data as { error?: boolean } | undefined)?.error ? (
+              <WarningCircle className="shrink-0 self-start mt-px text-red" />
+            ) : (
+              <Check className="shrink-0 text-green" />
+            )}
+            <Toast.Title
+              className={`min-w-0 flex-1 ${(t.data as { error?: boolean } | undefined)?.error ? "line-clamp-3" : "truncate"}`}
+            />
             {t.actionProps ? (
               <Toast.Action className="flex h-6 shrink-0 items-center gap-1.5 rounded-[6px] px-1.5 font-medium text-ink-2 transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink" />
             ) : null}
