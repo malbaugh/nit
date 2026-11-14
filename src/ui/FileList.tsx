@@ -12,6 +12,7 @@ export function FileList() {
   const width = st.useStore((s) => s.widths.files);
   const files = st.useStore((s) => s.files);
   const viewed = st.useStore((s) => s.viewed);
+  const changed = st.useStore((s) => s.changedSinceViewed.size);
   const drafts = st.useStore((s) => s.drafts);
   const branch = st.useStore((s) => s.data?.branch);
   const base = st.useStore((s) => s.data?.base);
@@ -44,6 +45,11 @@ export function FileList() {
       <div className="flex h-7 shrink-0 items-center gap-2 px-3.5 text-[12px] text-ink-3">
         <span className="font-medium text-ink-2">Files</span>
         <span className="tabular-nums">{files.length}</span>
+        {changed ? (
+          <span className="text-orange tabular-nums" title="Files you marked viewed that changed since">
+            · {changed} changed since viewed
+          </span>
+        ) : null}
         <span
           className="ml-auto flex items-center gap-1.5 tabular-nums"
           title={`${done} of ${files.length} files viewed`}

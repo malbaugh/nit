@@ -219,6 +219,21 @@ async function placeAsks(): Promise<AskThread[]> {
   return threads;
 }
 
+const diffHash = (text: string, path: string) =>
+  new Bun.CryptoHasher("sha1").update(fileDiff(text, path)).digest("hex");
+
+/** Viewed files whose diff is unchanged since, and the ones that changed (re-review those). */
+function viewedNow(text: string) {
+  const viewed: string[] = [];
+  const changedSinceViewed: string[] = [];
+  for (const v of store.viewed()) {
+    // A file marked before hashes were kept stays viewed until it's marked again.
+    if (v.hash === null || v.hash === diffHash(text, v.path)) viewed.push(v.path);
+    else if (fileDiff(text, v.path)) changedSinceViewed.push(v.path);
+  }
+  return { viewed, changedSinceViewed };
+}
+
 async function applySuggestion(d: Draft) {
   if (d.side !== "additions" || d.suggestion === null) return fail(400, "not a suggestion");
   const text = await git.readWorking(root, d.path);
@@ -248,17 +263,26 @@ const serve = (p: number) =>
     routes: {
       "/api/review": {
         GET: guarded(async () => {
+          const text = await patch();
           const data: ReviewData = {
             repo: root,
             branch,
             base,
             mergeBase,
-            patch: await patch(),
+            patch: text,
             drafts: store.drafts(),
-            viewed: store.viewed(),
+            ...viewedNow(text),
             asks: await placeAsks(),
           };
           return json(data);
+        }),
+      },
+      "/api/viewed-text": {
+        // A file as it was when marked viewed, for "since you viewed".
+        GET: guarded(async (req) => {
+          const path = new URL(req.url).searchParams.get("path") ?? "";
+          if (!validPath(path)) return fail(400, "invalid path");
+          return json({ text: store.viewedText(path) });
         }),
       },
       "/api/file": {
@@ -693,7 +717,18 @@ const serve = (p: number) =>
             viewed?: unknown;
           } | null;
           if (typeof body?.path !== "string" || typeof body.viewed !== "boolean") return fail(400, "invalid body");
-          store.setViewed(body.path, body.viewed);
+          if (!body.viewed) {
+            store.setViewed(body.path, false);
+            return json({ ok: true });
+          }
+          // Remember what was seen: the file's diff (to notice a change) and its text (to show it).
+          const content = validPath(body.path) ? await git.readWorking(root, body.path) : null;
+          store.setViewed(
+            body.path,
+            true,
+            diffHash(await patch(), body.path),
+            content !== null && content.length <= 2_000_000 ? content : null,
+          );
           return json({ ok: true });
         }),
       },

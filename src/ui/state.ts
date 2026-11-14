@@ -62,6 +62,10 @@ export type State = {
   style: Style;
   sidebar: boolean;
   viewed: Set<string>;
+  /** Files you marked viewed that have changed since: to look at again. */
+  changedSinceViewed: Set<string>;
+  /** The file whose diff shows only what changed since you viewed it. */
+  sinceViewed: string | null;
   drafts: Draft[];
   /** Where the line cursor is, and where a range started (shift + arrows). */
   cursor: Point | null;
@@ -130,6 +134,8 @@ let state: State = {
   style: storedStyle(),
   sidebar: savedLayout.sidebar ?? true,
   viewed: new Set(),
+  changedSinceViewed: new Set(),
+  sinceViewed: null,
   drafts: [],
   cursor: null,
   anchor: null,
@@ -271,6 +277,7 @@ export async function load() {
         current,
         drafts,
         viewed: new Set(data.viewed),
+        changedSinceViewed: new Set(data.changedSinceViewed),
         asks: data.asks,
         outlines: same ? s.outlines : {}, // changed files re-read their symbols on demand
         error: null,
@@ -391,8 +398,12 @@ export function toggleStyle() {
 /** Marks several files viewed or not at once (a folder from the tree's menu). */
 export function setViewed(paths: string[], viewed: boolean) {
   const next = new Set(state.viewed);
-  for (const p of paths) viewed ? next.add(p) : next.delete(p);
-  set({ viewed: next });
+  const changed = new Set(state.changedSinceViewed);
+  for (const p of paths) {
+    viewed ? next.add(p) : next.delete(p);
+    if (viewed) changed.delete(p);
+  }
+  set({ viewed: next, changedSinceViewed: changed, sinceViewed: null });
   Promise.all(paths.map((p) => api.setViewed(p, viewed))).catch(() =>
     fail("Couldn't save viewed state. Is nit still running?"),
   );
@@ -405,7 +416,9 @@ export function toggleViewed(advance = true) {
   const now = !viewed.has(file.name);
   if (now) viewed.add(file.name);
   else viewed.delete(file.name);
-  set({ viewed });
+  const changedSinceViewed = new Set(state.changedSinceViewed);
+  if (now) changedSinceViewed.delete(file.name);
+  set({ viewed, changedSinceViewed, sinceViewed: null });
   api.setViewed(file.name, now).catch(() => fail("Couldn't save viewed state. Is nit still running?"));
   if (now && advance) {
     const i = state.files.findIndex((f, i) => i > state.current && !viewed.has(f.name));

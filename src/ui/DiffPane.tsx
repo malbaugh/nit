@@ -1,8 +1,10 @@
-import type {
-  DiffLineAnnotation,
-  DiffTokenEventBaseProps,
-  FileDiffEditCompleteEvent,
-  SelectedLineRange,
+import {
+  type DiffLineAnnotation,
+  type DiffTokenEventBaseProps,
+  type FileDiffEditCompleteEvent,
+  type FileDiffMetadata,
+  parseDiffFromFile,
+  type SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import {
@@ -22,7 +24,7 @@ import {
   Sparks,
   ViewColumns2,
 } from "iconoir-react/regular";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Side } from "../types";
 import { AskAnnotation, AskChip } from "./Ask";
 import * as agent from "./agent";
@@ -38,7 +40,7 @@ import * as st from "./state";
 import * as suggest from "./suggest";
 import { ThreadAnnotation } from "./Threads";
 import { useTheme } from "./theme";
-import { Button, basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
+import { Button, basename, dirname, IconButton, Segmented, TextSegmented, Toggle, Tooltip } from "./ui";
 
 type Meta =
   | { id: string }
@@ -318,6 +320,36 @@ function lineMenu(target: Element): MenuItem[] | null {
   return items;
 }
 
+/**
+ * The file's diff since you marked it viewed: your viewed copy against the file now. Null until
+ * loaded, or when nit didn't keep the viewed copy (a file marked before it did).
+ */
+function useSinceViewed(file: FileDiffMetadata | null, on: boolean) {
+  const [diff, setDiff] = useState<FileDiffMetadata | null>(null);
+  useEffect(() => {
+    setDiff(null);
+    if (!file || !on) return;
+    let alive = true;
+    void Promise.all([api.viewedText(file.name), st.fileContents(file)]).then(([then, now]) => {
+      if (!alive) return;
+      if (then.text === null || now.new === null) {
+        st.set({ sinceViewed: null });
+        return st.fail("nit didn't keep this file as you viewed it, so it can't show just what changed.");
+      }
+      setDiff(
+        parseDiffFromFile(
+          { name: file.name, contents: then.text, cacheKey: `viewed:${file.name}:${then.text.length}` },
+          { name: file.name, contents: now.new },
+        ),
+      );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [file, on]);
+  return diff;
+}
+
 export function DiffPane() {
   const file = st.useStore((s) => st.currentFile(s));
   const style = st.useStore((s) => s.style);
@@ -331,6 +363,9 @@ export function DiffPane() {
   const { darkThemeName: darkTheme, lightThemeName: lightTheme, resolvedColorScheme: scheme } = useTheme();
 
   const prefs = st.useStore((s) => s.prefs);
+  const changedSince = st.useStore((s) => (file ? s.changedSinceViewed.has(file.name) : false));
+  const sinceOn = st.useStore((s) => !!file && s.sinceViewed === file.name);
+  const sinceDiff = useSinceViewed(file, sinceOn);
   const options = useMemo(
     () => ({
       theme: { dark: darkTheme, light: lightTheme },
@@ -453,7 +488,7 @@ export function DiffPane() {
   );
 
   if (!file) return null;
-  const { add, del } = stats(file);
+  const { add, del } = stats(sinceDiff ?? file); // the counts follow the view
   const dirs = dirname(file.name).split("/").filter(Boolean);
   // Which function or class the cursor is in, from the side it's on.
   const scope = cursor
@@ -494,6 +529,17 @@ export function DiffPane() {
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {changedSince ? (
+            <TextSegmented
+              label="Which changes"
+              value={sinceOn ? "since" : "all"}
+              onChange={(v) => st.set({ sinceViewed: v === "since" ? file.name : null })}
+              options={[
+                { value: "all", label: "All changes" },
+                { value: "since", label: "Since you viewed" },
+              ]}
+            />
+          ) : null}
           <IconButton
             label={full ? "Fold unchanged lines" : "Show the whole file"}
             keys="f"
@@ -532,10 +578,11 @@ export function DiffPane() {
       <div data-diff-scroll className="min-h-0 flex-1 overflow-auto">
         <RightClick resolve={lineMenu}>
           <FileDiff<Meta, undefined>
-            key={file.name}
-            fileDiff={file}
+            key={sinceDiff ? `since:${file.name}` : file.name}
+            fileDiff={sinceDiff ?? file}
             options={options}
-            lineAnnotations={annotations}
+            // Since you viewed, the old side is your viewed copy, not the base: only new-side notes fit.
+            lineAnnotations={sinceDiff ? annotations.filter((a) => a.side === "additions") : annotations}
             renderAnnotation={renderAnnotation}
             selectedLines={selected}
             edit={!!suggestingHere && !suggestingHere.ending}

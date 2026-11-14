@@ -81,6 +81,16 @@ export function openStore(review: string) {
     path text not null,
     primary key (review, path)
   )`);
+  // What a file's diff was when it was marked viewed (a hash) and its text then, so a later
+  // change unmarks it and can be shown on its own. Rows from before have neither.
+  for (const col of ["hash", "content"])
+    if (
+      !db
+        .query<{ name: string }, []>("select name from pragma_table_info('viewed')")
+        .all()
+        .some((c) => c.name === col)
+    )
+      db.run(`alter table viewed add column ${col} text`);
 
   // User settings (the theme): shared by every review, unlike the rest of this file.
   db.run("create table if not exists setting (key text primary key, value text not null)");
@@ -122,8 +132,15 @@ export function openStore(review: string) {
       anchor = excluded.anchor, proposal = excluded.proposal, updated_at = excluded.updated_at
     where draft.review = excluded.review`);
   const remove = db.query("delete from draft where review = ? and id = ?");
-  const listViewed = db.query<{ path: string }, [string]>("select path from viewed where review = ?");
-  const addViewed = db.query("insert or ignore into viewed (review, path) values (?, ?)");
+  const listViewed = db.query<{ path: string; hash: string | null }, [string]>(
+    "select path, hash from viewed where review = ?",
+  );
+  const viewedText = db.query<{ content: string | null }, [string, string]>(
+    "select content from viewed where review = ? and path = ?",
+  );
+  const addViewed = db.query(
+    "insert into viewed (review, path, hash, content) values (?, ?, ?, ?) on conflict (review, path) do update set hash = excluded.hash, content = excluded.content",
+  );
   const removeViewed = db.query("delete from viewed where review = ? and path = ?");
 
   return {
@@ -165,9 +182,12 @@ export function openStore(review: string) {
     deleteAsk: (id: string) => {
       removeAsk.run(review, id);
     },
-    viewed: () => listViewed.all(review).map((r) => r.path),
-    setViewed: (path: string, viewed: boolean) => {
-      (viewed ? addViewed : removeViewed).run(review, path);
+    viewed: () => listViewed.all(review),
+    /** The file's text when it was marked viewed, if kept. */
+    viewedText: (path: string) => viewedText.get(review, path)?.content ?? null,
+    setViewed: (path: string, viewed: boolean, hash: string | null = null, content: string | null = null) => {
+      if (viewed) addViewed.run(review, path, hash, content);
+      else removeViewed.run(review, path);
     },
   };
 }

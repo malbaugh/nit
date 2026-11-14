@@ -77,6 +77,7 @@ export const api = {
   deleteDraft: (id: string) => call("DELETE", `/api/drafts/${id}`, {}),
   applySuggestion: (id: string) => call("POST", `/api/drafts/${id}/apply`, {}),
   setViewed: (path: string, viewed: boolean) => call("POST", "/api/viewed", { path, viewed }),
+  viewedText: (path: string) => call<{ text: string | null }>("GET", `/api/viewed-text?${q({ path })}`),
 
   github: (fresh = false) => call<GitHubState>("GET", `/api/github${fresh ? "?fresh=1" : ""}`),
   postReview: (event: ReviewEvent, summary: string) =>

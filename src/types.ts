@@ -39,7 +39,10 @@ export type ReviewData = {
   mergeBase: string;
   patch: string;
   drafts: Draft[];
+  /** Files marked viewed whose diff hasn't changed since. */
   viewed: string[];
+  /** Files marked viewed whose diff has changed since: to look at again. */
+  changedSinceViewed: string[];
   asks: AskThread[];
 };
 
