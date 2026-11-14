@@ -16,22 +16,44 @@ const KIND: Record<string, { letter: string; tone: string }> = {
   constant: { letter: "c", tone: "text-green" },
   macro: { letter: "#", tone: "text-ink-2" },
   enum: { letter: "E", tone: "text-orange" },
+  variable: { letter: "v", tone: "text-green" },
+  field: { letter: "f", tone: "text-ink-2" },
+  suite: { letter: "D", tone: "text-accent-ink" },
+  test: { letter: "t", tone: "text-green" },
 };
 const kindOf = (k: string) => KIND[k] ?? { letter: k.slice(0, 1), tone: "text-ink-3" };
 
 type Entry = Sym & { depth: number; status: "added" | "changed" | null };
 
-/** Nesting by containment, plus whether the diff added or touched each symbol. */
-function entries(symbols: Sym[], added: Set<number>, wholeFileNew: boolean): Entry[] {
+const key = (s: Sym) => `${s.kind}:${s.name}`;
+
+/** Old symbols whose span holds a removed line: they changed even if no line was added. */
+function touchedOld(old: Sym[], removed: Set<number>) {
+  const keys = new Set<string>();
+  for (const s of old)
+    for (let l = s.line; l <= s.endLine; l++)
+      if (removed.has(l)) {
+        keys.add(key(s));
+        break;
+      }
+  return keys;
+}
+
+/**
+ * Nesting by containment, plus what the diff did to each symbol: `added` if it didn't exist
+ * before, `changed` if an added line falls in it or a removed line fell in its old version.
+ */
+function entries(symbols: Sym[], old: Sym[] | null, added: Set<number>, removed: Set<number>): Entry[] {
+  const before = old ? new Set(old.map(key)) : null;
+  const touched = old ? touchedOld(old, removed) : new Set<string>();
   const stack: Sym[] = [];
   return symbols.map((s) => {
     while (stack.length && stack[stack.length - 1].endLine < s.line) stack.pop();
     const depth = stack.length;
     stack.push(s);
-    let touched = 0;
-    for (let l = s.line; l <= s.endLine; l++) if (added.has(l)) touched++;
-    const span = s.endLine - s.line + 1;
-    const status = wholeFileNew || touched === span ? "added" : touched ? "changed" : null;
+    let hit = false;
+    for (let l = s.line; l <= s.endLine && !hit; l++) hit = added.has(l);
+    const status = before && !before.has(key(s)) ? "added" : hit || touched.has(key(s)) ? "changed" : null;
     return { ...s, depth, status };
   });
 }
@@ -48,10 +70,10 @@ export function OutlinePanel() {
 
   const view = useMemo(() => {
     if (!file || !outline) return null;
-    const { added } = changedLines(file);
-    const all = entries(outline.new ?? [], added, file.type === "new");
-    const present = new Set((outline.new ?? []).map((s) => `${s.kind}:${s.name}`));
-    const removed = (outline.old ?? []).filter((s) => !present.has(`${s.kind}:${s.name}`));
+    const { added, removed: gone } = changedLines(file);
+    const all = entries(outline.new ?? [], file.type === "new" ? [] : outline.old, added, gone);
+    const present = new Set((outline.new ?? []).map(key));
+    const removed = (outline.old ?? []).filter((s) => !present.has(key(s)));
     return { all, removed, changedCount: all.filter((e) => e.status).length };
   }, [file, outline]);
 

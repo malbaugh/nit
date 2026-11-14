@@ -83,16 +83,15 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
 
   try {
     if (mode === "definition") {
-      st.set({
-        peek: {
-          ...base,
-          kind: "definition",
-          name: "name" in target ? target.name : null,
-          results: [],
-          status: "loading",
-        },
-      });
-      const r = await api.definition(at, target);
+      // Like an editor: one definition in this review is a jump, not a card. The loading card
+      // only shows if the lookup is slow, so a jump doesn't flash one.
+      const name = "name" in target ? target.name : null;
+      const slow = setTimeout(
+        () => st.set({ peek: { ...base, kind: "definition", name, results: [], status: "loading" } }),
+        150,
+      );
+      const r = await api.definition(at, target).finally(() => clearTimeout(slow));
+      if (r.results.length === 1 && openLocation(r.results[0])) return;
       st.set({ peek: { ...base, kind: "definition", name: r.name, results: r.results, status: "ready" } });
     } else {
       const name = (target as { name: string }).name;
@@ -120,48 +119,29 @@ export async function lookup(mode: "definition" | "references", by?: { name: str
 
 export const closePeek = () => st.set({ peek: null });
 
-/** Moves to a location when its file is in this review. Returns false when it isn't. */
-export function openLocation(loc: Location) {
+/** Puts the cursor on a line of a file in this review, showing the whole file if the line is folded away. */
+async function goToLine(index: number, side: Side, line: number) {
   const files = st.get().files;
-  const index = files.findIndex((f) => f.name === loc.path);
-  if (index === -1) return false;
   remember();
   if (index !== st.get().current) st.openFile(index);
-  const r = rows(files[index]);
-  const exact = r.find((x) => x.side === "additions" && x.line === loc.line);
-  const near = exact ?? r.find((x) => x.side === "additions" && x.line >= loc.line) ?? r.at(-1);
-  st.set({ cursor: near ? { side: near.side, line: near.line } : null, anchor: null, peek: null, focused: null });
-  return !!exact;
+  const path = files[index].name;
+  const visible = rows(st.get().files[index], st.get().fullFiles.has(path)).some(
+    (x) => x.side === side && x.line === line,
+  );
+  if (!visible && side === "additions") await st.setFullFile(path, true);
+  st.set({ cursor: { side, line }, anchor: null, peek: null, focused: null });
 }
 
-/** Outline click: move to the symbol when it's in the diff, otherwise show its code in a peek. */
+/** Moves to a location when its file is in this review. Returns false when it isn't. */
+export function openLocation(loc: Location) {
+  const index = st.get().files.findIndex((f) => f.name === loc.path);
+  if (index === -1) return false;
+  void goToLine(index, "additions", loc.line);
+  return true;
+}
+
+/** Outline click: go to the symbol in the code, unfolding the file if it's outside the changes. */
 export async function revealSymbol(sym: Sym, side: Side) {
-  const file = st.currentFile();
-  if (!file) return;
-  const r = rows(file);
-  const row = r.find((x) => x.side === side && x.line >= sym.line && x.line <= sym.endLine);
-  if (row) {
-    remember();
-    st.set({ cursor: { side: row.side, line: row.line }, anchor: null, peek: null });
-    return;
-  }
-  const text = await st.fileContents(file).catch(() => null);
-  const source = (side === "additions" ? text?.new : text?.old) ?? "";
-  const lines = source.split("\n");
-  const end = Math.min(sym.endLine, sym.line + 14);
-  const loc: Location = {
-    path: pathFor(file, side),
-    line: sym.nameLine,
-    col: sym.nameCol,
-    text: (lines[sym.nameLine - 1] ?? "").trim(),
-    kind: sym.kind,
-    snippet: lines.slice(sym.line - 1, end).join("\n"),
-    snippetStart: sym.line,
-    inDiff: true,
-    changed: false,
-  };
-  // Shown above the first change: the symbol itself is outside every hunk.
-  st.set({
-    peek: { at: { side, line: 0 }, path: loc.path, kind: "symbol", name: sym.name, results: [loc], status: "ready" },
-  });
+  const index = st.get().current;
+  if (st.get().files[index]) await goToLine(index, side, sym.nameLine);
 }

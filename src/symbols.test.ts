@@ -58,3 +58,50 @@ test("identifiers: at a position, and per line", async () => {
   expect(identifierAt(p, 2, 3)).toBeNull(); // inside the `return` keyword
   expect(identifiersOnLine(p, 2).map((i) => i.name)).toEqual(["cfg", "token", "fallback"]);
 });
+
+const TEST_FILE = `import { describe, expect, it } from "vitest";
+
+describe("Ramp bill payment confirm items", () => {
+  const bill = { id: "bill-a" };
+  const payment = (method: string) => ({ id: "batch-pay-1", method });
+  const deps = {
+    getMappedInvoiceId: async () => null,
+  };
+
+  it("keys a card-paid bill by the bill", async () => {
+    expect(payment("CARD")).toBeTruthy();
+  });
+
+  it.each([1, 2])("handles %i", () => {});
+});
+
+export class Store {
+  count = 0;
+  bump() {
+    return ++this.count;
+  }
+}
+
+export const LIMIT = 10;
+export const make = () => new Store();
+`;
+
+test("outline: test blocks by name, declarations, no object properties or locals", async () => {
+  const p = (await parse("outline-1", "a.test.ts", TEST_FILE))!;
+  const got = p.outline.map((s) => `${s.kind}:${s.name}`);
+  expect(got).toEqual([
+    "suite:Ramp bill payment confirm items",
+    "test:keys a card-paid bill by the bill",
+    "class:Store",
+    "field:count",
+    "method:bump",
+    "variable:LIMIT",
+    "function:make",
+  ]);
+  // Definitions for navigation still include what the tags query finds (e.g. the property).
+  expect(p.symbols.some((s) => s.name === "getMappedInvoiceId")).toBe(true);
+});
+
+test("every outline query compiles", async () => {
+  for (const g of ["typescript", "tsx", "javascript"] as const) expect((await load(g)).outline).not.toBeNull();
+});

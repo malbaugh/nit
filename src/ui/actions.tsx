@@ -7,6 +7,7 @@ import {
   CheckCircle,
   CodeBracketsSquare,
   EditPencil,
+  Expand,
   List,
   NavArrowDown,
   NavArrowUp,
@@ -219,6 +220,17 @@ export const actions: Action[] = [
     run: () => st.moveCursor(-1, true),
   },
 
+  {
+    id: "full-file",
+    group: "View",
+    label: "Show whole file / fold unchanged",
+    keys: ["f"],
+    icon: <Expand />,
+    run: () => {
+      const f = st.currentFile();
+      if (f) void st.setFullFile(f.name, !st.get().fullFiles.has(f.name));
+    },
+  },
   {
     id: "style",
     group: "View",

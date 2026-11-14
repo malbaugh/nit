@@ -1,4 +1,4 @@
-import { CodeBracketsSquare, Page, Search, Xmark } from "iconoir-react/regular";
+import { CodeBracketsSquare, Search, Xmark } from "iconoir-react/regular";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Location } from "../types";
 import { CodeBlock, langFor } from "./Code";
@@ -143,11 +143,9 @@ export function PeekAnnotation() {
         : "Find references to…"
       : peek.kind === "references"
         ? "References"
-        : peek.kind === "symbol"
-          ? "Symbol"
-          : "Definition";
+        : "Definition";
   const name = peek.kind === "pick" ? null : peek.name;
-  const icon = peek.kind === "references" ? <Search /> : peek.kind === "symbol" ? <Page /> : <CodeBracketsSquare />;
+  const icon = peek.kind === "references" ? <Search /> : <CodeBracketsSquare />;
   const selected = items[active] && "loc" in items[active] ? items[active].loc : undefined;
 
   return (
@@ -205,7 +203,7 @@ export function PeekAnnotation() {
             </div>
           ) : null}
 
-          {peek.status === "ready" && (peek.kind === "definition" || peek.kind === "symbol") ? (
+          {peek.status === "ready" && peek.kind === "definition" ? (
             peek.results.length ? (
               <>
                 {peek.results.length > 1 ? (

@@ -7,6 +7,9 @@ import go from "./queries/go.scm" with { type: "text" };
 import java from "./queries/java.scm" with { type: "text" };
 import javascript from "./queries/javascript.scm" with { type: "text" };
 import javascriptExtra from "./queries/javascript-extra.scm" with { type: "text" };
+import outlineJs from "./queries/outline-js.scm" with { type: "text" };
+import outlineJsOnly from "./queries/outline-js-only.scm" with { type: "text" };
+import outlineTs from "./queries/outline-ts.scm" with { type: "text" };
 import php from "./queries/php.scm" with { type: "text" };
 import python from "./queries/python.scm" with { type: "text" };
 import ruby from "./queries/ruby.scm" with { type: "text" };
@@ -20,10 +23,12 @@ import type { Symbol as Sym } from "./types";
 // The *-extra files are nit's additions (type aliases, enums, top-level constants).
 const JS = javascript + javascriptExtra;
 const TS = JS + typescript + typescriptExtra;
-const GRAMMARS = {
-  typescript: { wasm: "tree-sitter-typescript.wasm", query: TS },
-  tsx: { wasm: "tree-sitter-tsx.wasm", query: TS },
-  javascript: { wasm: "tree-sitter-javascript.wasm", query: JS },
+// Outline queries (what the outline panel shows) are nit's own for JavaScript and TypeScript;
+// other languages fall back to their tags.
+const GRAMMARS: Record<string, { wasm: string; query: string; outline?: string }> = {
+  typescript: { wasm: "tree-sitter-typescript.wasm", query: TS, outline: outlineJs + outlineTs },
+  tsx: { wasm: "tree-sitter-tsx.wasm", query: TS, outline: outlineJs + outlineTs },
+  javascript: { wasm: "tree-sitter-javascript.wasm", query: JS, outline: outlineJs + outlineJsOnly },
   python: { wasm: "tree-sitter-python.wasm", query: python },
   go: { wasm: "tree-sitter-go.wasm", query: go },
   rust: { wasm: "tree-sitter-rust.wasm", query: rust },
@@ -32,8 +37,19 @@ const GRAMMARS = {
   ruby: { wasm: "tree-sitter-ruby.wasm", query: ruby },
   php: { wasm: "tree-sitter-php.wasm", query: php },
   cpp: { wasm: "tree-sitter-cpp.wasm", query: cpp },
-} as const;
-export type Grammar = keyof typeof GRAMMARS;
+};
+export type Grammar =
+  | "typescript"
+  | "tsx"
+  | "javascript"
+  | "python"
+  | "go"
+  | "rust"
+  | "java"
+  | "csharp"
+  | "ruby"
+  | "php"
+  | "cpp";
 
 const BY_EXT: Record<string, Grammar> = {
   ".ts": "typescript",
@@ -68,7 +84,7 @@ function init() {
   return ready;
 }
 
-type Loaded = { parser: Parser; query: Query };
+type Loaded = { parser: Parser; query: Query; outline: Query | null };
 const loaded = new Map<Grammar, Promise<Loaded>>();
 
 export function load(grammar: Grammar): Promise<Loaded> {
@@ -79,7 +95,12 @@ export function load(grammar: Grammar): Promise<Loaded> {
       const language = await Language.load(join(wasmDir, GRAMMARS[grammar].wasm));
       const parser = new Parser();
       parser.setLanguage(language);
-      return { parser, query: new Query(language, GRAMMARS[grammar].query) };
+      const g = GRAMMARS[grammar];
+      return {
+        parser,
+        query: new Query(language, g.query),
+        outline: g.outline ? new Query(language, g.outline) : null,
+      };
     })();
     loaded.set(grammar, p);
   }
@@ -87,7 +108,8 @@ export function load(grammar: Grammar): Promise<Loaded> {
 }
 
 // Parsed files, keyed by caller (path + version). Trees hold WASM memory, so old ones are freed.
-type Parsed = { tree: Tree; grammar: Grammar; symbols: Sym[] };
+/** `symbols` are definitions (for navigation); `outline` is what a reader scans the file by. */
+type Parsed = { tree: Tree; grammar: Grammar; symbols: Sym[]; outline: Sym[] };
 const parsed = new Map<string, Parsed>();
 const MAX_PARSED = 200;
 
@@ -100,10 +122,11 @@ export async function parse(key: string, path: string, source: string): Promise<
   }
   const grammar = grammarFor(path);
   if (!grammar) return null;
-  const { parser, query } = await load(grammar);
+  const { parser, query, outline: outlineQuery } = await load(grammar);
   const tree = parser.parse(source);
   if (!tree) return null;
-  const entry = { tree, grammar, symbols: outline(tree, query) };
+  const symbols = definitions(tree, query);
+  const entry = { tree, grammar, symbols, outline: outlineQuery ? outline(tree, outlineQuery) : symbols };
   parsed.set(key, entry);
   if (parsed.size > MAX_PARSED) {
     const [oldest, value] = parsed.entries().next().value!;
@@ -114,7 +137,7 @@ export async function parse(key: string, path: string, source: string): Promise<
 }
 
 /** Definitions from the tags query (@definition.* with its @name), ordered by position. */
-function outline(tree: Tree, query: Query): Sym[] {
+function definitions(tree: Tree, query: Query): Sym[] {
   const seen = new Map<number, number>(); // definition node → index in out
   const out: Sym[] = [];
   for (const m of query.matches(tree.rootNode)) {
@@ -143,6 +166,38 @@ function outline(tree: Tree, query: Query): Sym[] {
 
 const IDENT = /identifier|^name$|^constant$|^field$|^property$/;
 const isIdentifier = (n: Node) => n.childCount === 0 && IDENT.test(n.type);
+
+const SUITE = /^(describe|context|suite)$/;
+const unquote = (s: string) => s.replace(/^[`'"]|[`'"]$/g, "");
+
+/** The outline query's items (@item.* with @name), nested by position. Test blocks are named by their string. */
+function outline(tree: Tree, query: Query): Sym[] {
+  const seen = new Map<number, number>();
+  const out: Sym[] = [];
+  for (const m of query.matches(tree.rootNode)) {
+    const item = m.captures.find((c) => c.name.startsWith("item."));
+    const name = m.captures.find((c) => c.name === "name");
+    if (!item || !name) continue;
+    let kind = item.name.slice("item.".length);
+    if (kind === "test") kind = SUITE.test(m.captures.find((c) => c.name === "fn")?.node.text ?? "") ? "suite" : "test";
+    const at = seen.get(item.node.id);
+    if (at !== undefined) {
+      // A const holding a function matches as both; "function" says more than "variable".
+      if (out[at].kind === "variable" && kind !== "variable") out[at].kind = kind;
+      continue;
+    }
+    seen.set(item.node.id, out.length);
+    out.push({
+      name: kind === "test" || kind === "suite" ? unquote(name.node.text) : name.node.text,
+      kind,
+      line: item.node.startPosition.row + 1,
+      endLine: item.node.endPosition.row + 1,
+      nameLine: name.node.startPosition.row + 1,
+      nameCol: name.node.startPosition.column,
+    });
+  }
+  return out.sort((a, b) => a.line - b.line || b.endLine - a.endLine);
+}
 
 /** The identifier at a 1-based line and 0-based column, or null on punctuation, strings, comments. */
 export function identifierAt(p: Parsed, line: number, col: number): string | null {

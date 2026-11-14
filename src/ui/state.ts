@@ -25,7 +25,6 @@ export type Peek = {
       text: Location[];
       truncated: boolean;
     }
-  | { kind: "symbol"; name: string; results: Location[] }
 );
 
 export type Outline = { new: Sym[] | null; old: Sym[] | null };
@@ -54,6 +53,8 @@ type State = {
   reviewOpen: boolean;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
+  /** Files shown whole (every unchanged line expanded), by path. */
+  fullFiles: Set<string>;
 };
 
 const stored = (key: string) => {
@@ -92,6 +93,7 @@ let state: State = {
   outlineOpen: stored("nit.outline") !== "0",
   reviewOpen: false,
   github: null,
+  fullFiles: new Set(),
 };
 
 const listeners = new Set<() => void>();
@@ -155,8 +157,10 @@ export async function load() {
   try {
     const requested = Date.now();
     const data = await api.review();
-    contents.clear();
-    const files = parsePatchFiles(data.patch).flatMap((p) => p.files);
+    // Coming back to the tab reloads; an unchanged patch keeps the hydrated files and outlines.
+    const same = data.patch === state.data?.patch;
+    if (!same) contents.clear();
+    const files = same ? state.files : parsePatchFiles(data.patch).flatMap((p) => p.files);
     const before = currentFile()?.name;
     set((s) => {
       const current = Math.max(0, before ? files.findIndex((f) => f.name === before) : 0);
@@ -180,12 +184,14 @@ export async function load() {
         current,
         drafts,
         viewed: new Set(data.viewed),
-        outlines: {}, // files may have changed; symbols are re-read on demand
+        outlines: same ? s.outlines : {}, // changed files re-read their symbols on demand
         error: null,
       };
     });
-    const r = fileRows();
-    if (currentFile()?.name !== before || rowIndex(r, state.cursor) === -1) resetCursor();
+    const file = currentFile();
+    // A whole-file view needs the full text before its lines exist to keep the cursor on.
+    if (file && state.fullFiles.has(file.name)) await hydrate(state.current);
+    if (currentFile()?.name !== before || rowIndex(fileRows(), state.cursor) === -1) resetCursor();
     hydrateAround(state.current);
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });
@@ -196,7 +202,7 @@ export async function load() {
 
 const fileRows = (s = state): Row[] => {
   const f = currentFile(s);
-  return f ? rows(f) : [];
+  return f ? rows(f, s.fullFiles.has(f.name)) : [];
 };
 
 function resetCursor() {
@@ -608,4 +614,19 @@ export function replyTo(threadId: string) {
     updatedAt: now,
   };
   set((s) => ({ drafts: [...s.drafts, draft], editing: draft.id, focused: draft.id }));
+}
+
+/** Shows the whole file, or folds unchanged lines back. Returns once the file has its full text. */
+export async function setFullFile(path: string, full: boolean) {
+  const index = state.files.findIndex((f) => f.name === path);
+  if (index === -1) return;
+  if (full) await hydrate(index);
+  set((s) => {
+    const fullFiles = new Set(s.fullFiles);
+    if (full) fullFiles.add(path);
+    else fullFiles.delete(path);
+    return { fullFiles };
+  });
+  // Folding back can hide the cursor's line.
+  if (!full && rowIndex(fileRows(), state.cursor) === -1) resetCursor();
 }

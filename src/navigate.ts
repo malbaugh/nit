@@ -238,7 +238,7 @@ export async function createNavigator(root: string, mergeBase: string, patch: ()
   return {
     async symbols(path: string, prev: string | null) {
       const [now, before] = await Promise.all([parsed(path, "additions"), parsed(prev ?? path, "deletions")]);
-      return { new: now?.parsed?.symbols ?? null, old: before?.parsed?.symbols ?? null };
+      return { new: now?.parsed?.outline ?? null, old: before?.parsed?.outline ?? null };
     },
 
     async identifiers(path: string, side: Side, line: number) {

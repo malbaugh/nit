@@ -1,6 +1,14 @@
 import type { DiffLineAnnotation, DiffTokenEventBaseProps, SelectedLineRange } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import { AlignJustify, ChatPlusIn, Check, NavArrowRight, SidebarExpand, ViewColumns2 } from "iconoir-react/regular";
+import {
+  AlignJustify,
+  ChatPlusIn,
+  Check,
+  Expand,
+  NavArrowRight,
+  SidebarExpand,
+  ViewColumns2,
+} from "iconoir-react/regular";
 import { useCallback, useEffect, useMemo } from "react";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
@@ -13,20 +21,37 @@ import { basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui"
 type Meta = { id: string } | { peek: true } | { thread: string };
 
 /** Pierre draws lines inside a shadow root; find the row for one side + line number. */
-function revealLine(side: "additions" | "deletions", line: number) {
+function findRow(side: "additions" | "deletions", line: number) {
   const root = document.querySelector("diffs-container")?.shadowRoot;
-  if (!root) return;
-  const rows = [...root.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)];
-  const want = side === "additions" ? "addition" : "deletion";
-  const el = rows.find((r) => r.dataset.lineType?.includes(want)) ?? rows.find((r) => r.dataset.lineType === "context");
-  if (!el) return;
-  // Scroll the diff vertically only; scrollIntoView would also shift a wide split view sideways.
+  const rows = root?.querySelectorAll<HTMLElement>(`[data-line="${line}"]`) ?? [];
+  // Pierre's own rule (getAnnotationSide): a change row's type names its side; any other row
+  // takes its column's, where only the split view's old column has data-deletions.
+  return [...rows].find((r) => {
+    const type = r.dataset.lineType;
+    if (type === "change-deletion") return side === "deletions";
+    if (type === "change-addition") return side === "additions";
+    return r.closest("[data-deletions]") ? side === "deletions" : side === "additions";
+  });
+}
+
+/**
+ * Brings the cursor row into view, vertically only (scrollIntoView would also shift a wide split
+ * view sideways). Off screen (a jump) centres it; near an edge (j/k) nudges it. A freshly
+ * remounted diff draws a frame or two late, so it retries briefly.
+ */
+function revealLine(side: "additions" | "deletions", line: number, tries = 10) {
+  const el = findRow(side, line);
   const scroller = document.querySelector<HTMLElement>("[data-diff-scroll]");
-  if (!scroller) return;
+  if (!el || !scroller) {
+    if (tries > 0) requestAnimationFrame(() => revealLine(side, line, tries - 1));
+    return;
+  }
   const row = el.getBoundingClientRect();
   const box = scroller.getBoundingClientRect();
   const margin = 48;
-  if (row.top < box.top + margin) scroller.scrollTop -= box.top + margin - row.top;
+  if (row.bottom < box.top || row.top > box.bottom)
+    scroller.scrollTop += row.top - box.top - (box.height - row.height) / 2;
+  else if (row.top < box.top + margin) scroller.scrollTop -= box.top + margin - row.top;
   else if (row.bottom > box.bottom - margin) scroller.scrollTop += row.bottom - (box.bottom - margin);
 }
 
@@ -53,6 +78,8 @@ const STYLE_OPTIONS = [
 export function DiffPane() {
   const file = st.useStore((s) => st.currentFile(s));
   const style = st.useStore((s) => s.style);
+  // Pierre throws on expandUnchanged for a partial diff, so only once the file's full text is in.
+  const full = st.useStore((s) => (file ? s.fullFiles.has(file.name) && !file.isPartial : false));
   const viewed = st.useStore((s) => (file ? s.viewed.has(file.name) : false));
   const drafts = st.useStore((s) => s.drafts);
   const cursor = st.useStore((s) => s.cursor);
@@ -63,6 +90,7 @@ export function DiffPane() {
       theme: { dark: "pierre-dark", light: "pierre-light" },
       themeType: "system" as const,
       diffStyle: style,
+      expandUnchanged: full,
       diffIndicators: "bars" as const,
       lineDiffType: "word-alt" as const,
       hunkSeparators: "line-info" as const,
@@ -90,7 +118,7 @@ export function DiffPane() {
         void nav.lookup("definition", { col: t.lineCharStart });
       },
     }),
-    [style],
+    [style, full],
   );
 
   const peekAt = st.useStore((s) => s.peek?.at);
@@ -186,6 +214,14 @@ export function DiffPane() {
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <IconButton
+            label={full ? "Fold unchanged lines" : "Show the whole file"}
+            keys="f"
+            onClick={() => void st.setFullFile(file.name, !full)}
+            className={full ? "bg-hover-2 text-ink" : ""}
+          >
+            <Expand />
+          </IconButton>
           <IconButton label="Comment on file" keys="C" onClick={st.startFileComment}>
             <ChatPlusIn />
           </IconButton>
