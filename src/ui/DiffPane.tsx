@@ -7,7 +7,7 @@ import { stats } from "./lines";
 import * as nav from "./nav";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
-import { basename, dirname, IconButton, Segmented, Tooltip } from "./ui";
+import { basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
 
 type Meta = { id: string } | { peek: true };
 
@@ -169,26 +169,19 @@ export function DiffPane() {
             onChange={(v) => v !== style && st.toggleStyle()}
           />
           <Tooltip label={viewed ? "Mark as not viewed" : "Mark as viewed"} keys="v">
-            <button
-              type="button"
-              aria-pressed={viewed}
-              onClick={() => st.toggleViewed()}
-              className={`flex h-7 items-center gap-1.5 rounded-control pr-2.5 pl-2 text-[12.5px] font-medium transition-[background-color,color,transform,box-shadow] duration-100 active:scale-[0.97] ${
-                viewed
-                  ? "bg-green-tint text-green shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--green)_30%,transparent)]"
-                  : "bg-surface text-ink-2 shadow-btn [@media(hover:hover)]:hover:text-ink"
-              }`}
+            <Toggle
+              pressed={viewed}
+              onPressedChange={() => st.toggleViewed()}
+              className="group/viewed flex h-7 items-center gap-1.5 rounded-control bg-surface pr-2.5 pl-2 text-[12.5px] font-medium text-ink-2 shadow-btn transition-[background-color,color,transform,box-shadow] duration-100 active:scale-[0.97] data-pressed:bg-green-tint data-pressed:text-green data-pressed:shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--green)_30%,transparent)] [@media(hover:hover)]:hover:text-ink [@media(hover:hover)]:data-pressed:hover:text-green"
             >
               <span
                 aria-hidden
-                className={`flex size-3.5 items-center justify-center rounded-[4px] transition-[background-color,box-shadow] duration-100 ${
-                  viewed ? "bg-green text-page" : "shadow-[inset_0_0_0_1.5px_var(--line-strong)]"
-                }`}
+                className="flex size-3.5 items-center justify-center rounded-[4px] shadow-[inset_0_0_0_1.5px_var(--line-strong)] transition-[background-color,box-shadow] duration-100 group-data-pressed/viewed:bg-green group-data-pressed/viewed:text-page group-data-pressed/viewed:shadow-none"
               >
                 {viewed ? <Check width={11} height={11} strokeWidth={2.5} /> : null}
               </span>
               Viewed
-            </button>
+            </Toggle>
           </Tooltip>
         </div>
       </header>

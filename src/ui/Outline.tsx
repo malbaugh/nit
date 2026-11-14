@@ -3,7 +3,7 @@ import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { Kbd } from "./ui";
+import { Kbd, TextSegmented } from "./ui";
 
 /** One letter per kind, coloured quietly so the names stay the focus. */
 const KIND: Record<string, { letter: string; tone: string }> = {
@@ -71,25 +71,20 @@ export function OutlinePanel() {
         </span>
       </header>
       <div className="flex h-7 shrink-0 items-center gap-1 px-2.5">
-        {(["All", "Changed"] as const).map((t) => {
-          const on = (t === "Changed") === onlyChanged;
-          return (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setOnlyChanged(t === "Changed")}
-              className={`h-6 rounded-[6px] px-2 text-[12px] font-medium transition-[background-color,color] duration-100 ${
-                on ? "bg-hover-2 text-ink" : "text-ink-3 [@media(hover:hover)]:hover:text-ink"
-              }`}
-            >
-              {t}
-              {t === "Changed" && view ? (
-                <span className="ml-1 text-ink-3 tabular-nums">{view.changedCount}</span>
-              ) : null}
-            </button>
-          );
-        })}
+        <TextSegmented
+          label="Which symbols"
+          value={onlyChanged ? "changed" : "all"}
+          onChange={(v) => setOnlyChanged(v === "changed")}
+          options={[
+            { value: "all", label: "All" },
+            {
+              value: "changed",
+              label: (
+                <>Changed{view ? <span className="ml-1 text-ink-3 tabular-nums">{view.changedCount}</span> : null}</>
+              ),
+            },
+          ]}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">

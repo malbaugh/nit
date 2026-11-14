@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import type { Draft, FileContents, Location, ReviewData, Side, Symbol as Sym } from "../types";
 import { api } from "./api";
 import { type Row, rows } from "./lines";
+import { toasts } from "./toasts";
 
 export type Point = { side: Side; line: number };
 export type Style = "split" | "unified";
@@ -45,11 +46,12 @@ type State = {
   focused: string | null;
   saving: Record<string, "saving" | "error">;
   palette: "all" | "files" | "symbols" | null;
-  toast: { message: string; undo?: () => void } | null;
   peek: Peek | null;
   /** Symbols per file path, from the server's tree-sitter parse. */
   outlines: Record<string, Outline>;
   outlineOpen: boolean;
+  /** The review sheet: every draft by file, before posting. */
+  reviewOpen: boolean;
 };
 
 const stored = (key: string) => {
@@ -83,10 +85,10 @@ let state: State = {
   focused: null,
   saving: {},
   palette: null,
-  toast: null,
   peek: null,
   outlines: {},
   outlineOpen: stored("nit.outline") !== "0",
+  reviewOpen: false,
 };
 
 const listeners = new Set<() => void>();
@@ -237,7 +239,13 @@ export function nextChange(direction: 1 | -1) {
     });
 }
 
+const samePoint = (a: Point | null, b: Point | null) => a?.side === b?.side && a?.line === b?.line;
+
 export function setSelection(start: Point, end: Point) {
+  // Pierre reports the selection back when nit moves the cursor itself; that echo isn't a user
+  // action and must not clear the focused comment.
+  const single = start.side === end.side && start.line === end.line;
+  if (samePoint(state.cursor, end) && (single ? state.anchor === null : samePoint(state.anchor, start))) return;
   set({
     anchor: start.side === end.side && start.line === end.line ? null : start,
     cursor: end,
@@ -283,22 +291,28 @@ export function toggleViewed(advance = true) {
   }
 }
 
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 /** The last undoable action. ⌘Z still works after its toast has gone. */
 let lastUndo: (() => void) | null = null;
+let lastUndoToast: string | null = null;
+
 export function toast(message: string, undo?: () => void) {
-  clearTimeout(toastTimer);
   if (undo) lastUndo = undo;
-  set({ toast: { message, undo } });
-  toastTimer = setTimeout(() => set({ toast: null }), 4000);
+  const id = toasts.add({
+    title: message,
+    timeout: 4000,
+    actionProps: undo ? { children: "Undo", onClick: () => runUndo() } : undefined,
+  });
+  if (undo) lastUndoToast = id;
 }
 export const canUndo = () => lastUndo !== null;
-export function undo() {
+function runUndo() {
   const fn = lastUndo;
   lastUndo = null;
-  set({ toast: null });
+  if (lastUndoToast) toasts.close(lastUndoToast);
+  lastUndoToast = null;
   fn?.();
 }
+export const undo = runUndo;
 
 // ---------- drafts
 
@@ -482,6 +496,24 @@ export async function applySuggestion(id: string) {
 export function orderedDrafts(s = state) {
   const order = new Map(s.files.map((f, i) => [f.name, i]));
   return [...s.drafts].sort((a, b) => (order.get(a.path) ?? 1e9) - (order.get(b.path) ?? 1e9) || a.start - b.start);
+}
+
+/** Opens a draft's file and puts the cursor and focus on it. */
+export function focusDraft(id: string) {
+  const d = state.drafts.find((x) => x.id === id);
+  if (!d) return;
+  const index = state.files.findIndex((f) => f.name === d.path);
+  if (index !== -1 && index !== state.current) {
+    set({ current: index });
+    void hydrate(index);
+  }
+  set({
+    focused: d.id,
+    cursor: d.start === 0 ? state.cursor : { side: d.side, line: d.end },
+    anchor: null,
+    editing: null,
+    peek: null,
+  });
 }
 
 export function jumpDraft(direction: 1 | -1) {

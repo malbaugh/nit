@@ -1,4 +1,7 @@
-import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Toggle } from "@base-ui/react/toggle";
+import { ToggleGroup } from "@base-ui/react/toggle-group";
+import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
+import type { ButtonHTMLAttributes, ReactElement, ReactNode } from "react";
 import { keyLabel } from "./actions";
 
 export const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);
@@ -16,9 +19,10 @@ export function Kbd({ k, quiet = false }: { k: string; quiet?: boolean }) {
   );
 }
 
-// Tooltips wait before the first one opens, then open instantly while you move between controls.
-let lastClosed = 0;
-
+/**
+ * Base UI tooltip with nit's look. The app-wide <Tooltip.Provider> sets the delay; once one
+ * tooltip is open, neighbours open instantly (Base UI's `data-instant`), so toolbars feel fast.
+ */
 export function Tooltip({
   label,
   keys,
@@ -28,51 +32,28 @@ export function Tooltip({
   label: string;
   keys?: string;
   side?: "top" | "bottom";
-  children: ReactNode;
+  children: ReactElement<Record<string, unknown>>;
 }) {
-  const [open, setOpen] = useState<"delayed" | "instant" | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const id = useId();
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const show = () => {
-    clearTimeout(timer.current);
-    if (performance.now() - lastClosed < 400) setOpen("instant");
-    else timer.current = setTimeout(() => setOpen("delayed"), 500);
-  };
-  const hide = () => {
-    clearTimeout(timer.current);
-    if (open) lastClosed = performance.now();
-    setOpen(null);
-  };
-
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the wrapper only tracks hover and focus for its trigger
-    <span
-      className="relative inline-flex"
-      onPointerEnter={show}
-      onPointerLeave={hide}
-      onFocus={show}
-      onBlur={hide}
-      onPointerDown={hide}
-      aria-describedby={open ? id : undefined}
-    >
-      {children}
-      {open && (
-        <span
-          id={id}
-          role="tooltip"
-          className={`pointer-events-none absolute left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-[6px] bg-tooltip px-2 py-1 text-[11.5px] font-medium text-tooltip-fg shadow-overlay ${
-            side === "bottom" ? "top-[calc(100%+6px)] origin-top" : "bottom-[calc(100%+6px)] origin-bottom"
-          } ${open === "delayed" ? "transition-[opacity,scale] duration-150 ease-out-strong starting:scale-[0.97] starting:opacity-0" : ""}`}
-        >
-          {label}
-          {keys && <span className="opacity-60">{keyLabel(keys)}</span>}
-        </span>
-      )}
-    </span>
+    <BaseTooltip.Root>
+      <BaseTooltip.Trigger render={children} />
+      <BaseTooltip.Portal>
+        <BaseTooltip.Positioner side={side} sideOffset={6} className="z-50">
+          <BaseTooltip.Popup className="flex origin-(--transform-origin) items-center gap-1.5 rounded-[6px] bg-tooltip px-2 py-1 text-[11.5px] font-medium text-tooltip-fg shadow-overlay transition-[opacity,scale] duration-150 ease-out-strong data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-instant:transition-none data-starting-style:scale-[0.97] data-starting-style:opacity-0">
+            {label}
+            {keys ? <span className="opacity-60">{keyLabel(keys)}</span> : null}
+          </BaseTooltip.Popup>
+        </BaseTooltip.Positioner>
+      </BaseTooltip.Portal>
+    </BaseTooltip.Root>
   );
 }
+
+export const TooltipProvider = ({ children }: { children: ReactNode }) => (
+  <BaseTooltip.Provider delay={500} closeDelay={0} timeout={400}>
+    {children}
+  </BaseTooltip.Provider>
+);
 
 type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
@@ -129,6 +110,7 @@ export function Button({
   );
 }
 
+/** A single-choice icon switch (Base UI ToggleGroup): arrow keys move between options. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -141,31 +123,64 @@ export function Segmented<T extends string>({
   label: string;
 }) {
   return (
-    <div
-      role="radiogroup"
+    <ToggleGroup
       aria-label={label}
+      value={[value]}
+      onValueChange={(v) => {
+        if (v[0]) onChange(v[0] as T);
+      }}
       className="flex h-7 items-center gap-px rounded-control bg-inset p-[2px] shadow-[inset_0_0_0_1px_var(--line)]"
     >
       {options.map((o) => (
         <Tooltip key={o.value} label={o.label} keys={o.keys}>
-          {/* biome-ignore lint/a11y/useSemanticElements: an icon toggle; native radios can't be styled like this */}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={value === o.value}
+          <Toggle
+            value={o.value}
             aria-label={o.label}
-            onClick={() => onChange(o.value)}
-            className={`flex h-[22px] w-7 items-center justify-center rounded-[6px] transition-[background-color,color] duration-100 ${
-              value === o.value ? "bg-surface text-ink shadow-btn" : "text-ink-3 [@media(hover:hover)]:hover:text-ink"
-            }`}
+            className="flex h-[22px] w-7 items-center justify-center rounded-[6px] text-ink-3 transition-[background-color,color] duration-100 data-pressed:bg-surface data-pressed:text-ink data-pressed:shadow-btn [@media(hover:hover)]:hover:text-ink"
           >
             {o.icon}
-          </button>
+          </Toggle>
         </Tooltip>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
+
+/** A text switch for filters ("All / Changed"), same Base UI ToggleGroup underneath. */
+export function TextSegmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: { value: T; label: ReactNode }[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  return (
+    <ToggleGroup
+      aria-label={label}
+      value={[value]}
+      onValueChange={(v) => {
+        if (v[0]) onChange(v[0] as T);
+      }}
+      className="flex items-center gap-0.5"
+    >
+      {options.map((o) => (
+        <Toggle
+          key={o.value}
+          value={o.value}
+          className="h-6 rounded-[6px] px-2 text-[12px] font-medium text-ink-3 transition-[background-color,color] duration-100 data-pressed:bg-hover-2 data-pressed:text-ink [@media(hover:hover)]:hover:text-ink"
+        >
+          {o.label}
+        </Toggle>
+      ))}
+    </ToggleGroup>
+  );
+}
+
+export { Toggle };
 
 /** A small ring that fills as files are marked viewed. */
 export function ProgressRing({ value, size = 14 }: { value: number; size?: number }) {

@@ -1,3 +1,4 @@
+import { Tabs } from "@base-ui/react/tabs";
 import {
   Bold,
   Check,
@@ -219,25 +220,19 @@ function Composer({ draft }: { draft: Draft }) {
       className="min-w-0 max-w-[780px] overflow-hidden rounded-card bg-surface shadow-raised transition-shadow duration-150 focus-within:shadow-[0_0_0_1px_var(--accent),0_0_0_4px_var(--accent-tint),0_2px_10px_oklch(0_0_0/0.2)]"
     >
       <div className="flex h-9 items-center gap-2 px-1.5 shadow-[0_1px_0_var(--line)]">
-        <div role="tablist" aria-label="Editor mode" className="flex items-center gap-0.5">
-          {(["Write", "Preview"] as const).map((t) => {
-            const on = (t === "Preview") === preview;
-            return (
-              <button
+        <Tabs.Root value={preview ? "preview" : "write"} onValueChange={(v) => setPreview(v === "preview")}>
+          <Tabs.List aria-label="Editor mode" className="flex items-center gap-0.5">
+            {(["write", "preview"] as const).map((t) => (
+              <Tabs.Tab
                 key={t}
-                type="button"
-                role="tab"
-                aria-selected={on}
-                onClick={() => setPreview(t === "Preview")}
-                className={`h-6 rounded-[6px] px-2 text-[12.5px] font-medium transition-[background-color,color] duration-100 ${
-                  on ? "bg-hover-2 text-ink" : "text-ink-3 [@media(hover:hover)]:hover:text-ink"
-                }`}
+                value={t}
+                className="h-6 rounded-[6px] px-2 text-[12.5px] font-medium text-ink-3 capitalize transition-[background-color,color] duration-100 data-active:bg-hover-2 data-active:text-ink [@media(hover:hover)]:hover:text-ink"
               >
                 {t}
-              </button>
-            );
-          })}
-        </div>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs.Root>
         <span className="text-[11.5px] text-ink-3">{where(draft)}</span>
         <div className={`ml-auto flex items-center ${preview ? "invisible" : ""}`}>
           {TOOLS.map((group, gi) => (

@@ -162,7 +162,7 @@ export function FileList() {
       <footer className="flex h-11 shrink-0 items-center gap-1 px-2 shadow-[0_-1px_0_var(--line)]">
         <button
           type="button"
-          onClick={() => st.jumpDraft(1)}
+          onClick={() => st.set({ reviewOpen: true })}
           disabled={!drafts.length}
           className="flex h-7 items-center gap-1.5 rounded-control px-2 text-[12.5px] text-ink-2 transition-[background-color,color] duration-100 enabled:[@media(hover:hover)]:hover:bg-hover-2 enabled:[@media(hover:hover)]:hover:text-ink disabled:text-ink-3"
         >

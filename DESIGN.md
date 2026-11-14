@@ -255,6 +255,24 @@ flowchart, insight cards and the fine-tune inspector. nit has no use for them.
 Bun's HTML bundler runs it through `bun-plugin-tailwind`. That's two dev
 dependencies and no runtime cost.
 
+### Libraries underneath (built)
+
+Interactive pieces sit on proven libraries rather than hand-rolled behaviour:
+
+- **Base UI** (`@base-ui/react`, MIT, headless): tooltips (one provider; after
+  the first opens, neighbours open instantly), the command palette's dialog
+  (focus trap, Esc, outside click), toggle groups (layout switch, outline
+  filter), the Viewed toggle, the comment box's Write/Preview tabs, and
+  toasts (stacking, timers paused on hover, swipe to dismiss).
+- **Silk** (`@silk-hq/components`, used under its non-commercial licence as a
+  personal open-source tool): the review sheet (`⌘⇧↵`), a side sheet listing
+  every comment by file, with jump-to and "Copy as Markdown". In phase 2 it
+  gains the verdict and "Post to GitHub".
+- **Pierre diffs** for the diff, **iconoir** for icons, and **Beautiful UI's**
+  tokens for colour, shadow and radius.
+
+Styling stays ours: every library is unstyled and themed with the tokens above.
+
 ## Workhorse rules
 
 These apply to every component, copied or ours. A component that fails one

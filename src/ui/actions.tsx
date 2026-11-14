@@ -107,6 +107,14 @@ export const actions: Action[] = [
     when: () => focusedDraft()?.suggestion != null,
     run: () => void st.applySuggestion(st.get().focused!),
   },
+  {
+    id: "review",
+    group: "Review",
+    label: "Review all comments",
+    keys: ["Mod+Shift+Enter"],
+    icon: <ChatLines />,
+    run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
   { id: "undo", group: "Review", label: "Undo", keys: ["Mod+z"], icon: <Undo />, when: st.canUndo, run: st.undo },
 
   {
@@ -285,7 +293,13 @@ export function handleKey(e: KeyboardEvent) {
   }
   // The palette and the composer handle their own keys. While a composer is open, stray
   // letters typed before it takes focus must not trigger actions.
-  if (s.palette || typing || s.editing) return;
+  if (name === "Mod+Shift+Enter" && !s.editing) {
+    e.preventDefault();
+    st.set({ reviewOpen: !s.reviewOpen });
+    return;
+  }
+  // The sheet traps focus and handles Esc itself.
+  if (s.palette || typing || s.editing || s.reviewOpen) return;
   if (e.key === "Escape") {
     if (s.peek) nav.closePeek();
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
