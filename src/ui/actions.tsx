@@ -14,6 +14,7 @@ import {
   Page,
   Refresh,
   Search,
+  Settings,
   SidebarCollapse,
   SidebarExpand,
   Trash,
@@ -119,6 +120,14 @@ export const actions: Action[] = [
     keys: ["Mod+Shift+Enter"],
     icon: <ChatLines />,
     run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
+  {
+    id: "settings",
+    group: "View",
+    label: "Theme and appearance",
+    keys: ["Mod+,"],
+    icon: <Settings />,
+    run: () => st.set((s) => ({ settingsOpen: !s.settingsOpen })),
   },
   {
     id: "reply",
@@ -336,7 +345,7 @@ export function handleKey(e: KeyboardEvent) {
     return;
   }
   // The sheet traps focus and handles Esc itself.
-  if (s.palette || typing || s.editing || s.reviewOpen) return;
+  if (s.palette || typing || s.editing || s.reviewOpen || s.settingsOpen) return;
   if (e.key === "Escape") {
     if (s.peek) nav.closePeek();
     else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });

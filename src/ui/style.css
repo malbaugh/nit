@@ -5,7 +5,7 @@
 
 /* Tokens are Beautiful UI's (beautifului.dev, MIT): cool OKLCH neutrals, crisp
    hairlines, layered single-digit shadows, colour used sparingly. Dark is the
-   default; light follows the system setting. */
+   default; data-scheme (set from the theme settings) switches to light. */
 :root {
   color-scheme: dark;
   --page: oklch(0.209 0.004 264.477);
@@ -40,40 +40,37 @@
   --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --page: oklch(0.985 0.001 286.376);
-    --canvas: oklch(0.975 0.002 247.84);
-    --surface: oklch(1 0 0);
-    --inset: oklch(0.979 0.002 247.839);
-    --hover: oklch(0.97 0.002 247.839);
-    --hover-2: oklch(0.933 0.003 247.86);
-    --ink: oklch(0.247 0.006 258.361);
-    --ink-2: oklch(0.506 0.01 264.477);
-    --ink-3: oklch(0.62 0.009 264.505);
-    --line: oklch(0.932 0.003 264.542);
-    --line-strong: oklch(0.9 0.005 258.326);
-    --line-soft: oklch(0.955 0.002 264.542);
-    --field: oklch(0.961 0.001 286.375);
-    --accent: oklch(0.626 0.205 254.947);
-    --accent-ink: oklch(0.556 0.187 255.617);
-    --accent-tint: oklch(0.626 0.205 254.947 / 0.1);
-    --green: oklch(0.603 0.155 150.883);
-    --green-tint: oklch(0.603 0.155 150.883 / 0.1);
-    --orange: oklch(0.66 0.17 52);
-    --orange-tint: oklch(0.689 0.179 49.902 / 0.1);
-    --red: oklch(0.621 0.192 23.042);
-    --red-tint: oklch(0.621 0.192 23.042 / 0.1);
-    --tooltip-bg: oklch(0.272 0.008 264.435);
-    --tooltip-fg: oklch(0.976 0.002 247.839);
-    --shadow-btn: 0 0 0 1px var(--line-strong), 0 1px 2px oklch(0.2 0.02 264 / 0.05);
-    --shadow-card: 0 0 0 1px var(--line), 0 1px 2px oklch(0.2 0.02 264 / 0.04), 0 2px 6px oklch(0.2 0.02 264 / 0.04);
-    --shadow-raised: 0 0 0 1px var(--line), 0 2px 4px oklch(0.2 0.02 264 / 0.04), 0 6px 16px oklch(0.2 0.02 264 / 0.06);
-    --shadow-overlay:
-      0 0 0 1px var(--line), 0 4px 8px oklch(0.2 0.02 264 / 0.05), 0 16px 40px oklch(0.2 0.02 264 / 0.12);
-    --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.06);
-  }
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --page: oklch(0.985 0.001 286.376);
+  --canvas: oklch(0.975 0.002 247.84);
+  --surface: oklch(1 0 0);
+  --inset: oklch(0.979 0.002 247.839);
+  --hover: oklch(0.97 0.002 247.839);
+  --hover-2: oklch(0.933 0.003 247.86);
+  --ink: oklch(0.247 0.006 258.361);
+  --ink-2: oklch(0.506 0.01 264.477);
+  --ink-3: oklch(0.62 0.009 264.505);
+  --line: oklch(0.932 0.003 264.542);
+  --line-strong: oklch(0.9 0.005 258.326);
+  --line-soft: oklch(0.955 0.002 264.542);
+  --field: oklch(0.961 0.001 286.375);
+  --accent: oklch(0.626 0.205 254.947);
+  --accent-ink: oklch(0.556 0.187 255.617);
+  --accent-tint: oklch(0.626 0.205 254.947 / 0.1);
+  --green: oklch(0.603 0.155 150.883);
+  --green-tint: oklch(0.603 0.155 150.883 / 0.1);
+  --orange: oklch(0.66 0.17 52);
+  --orange-tint: oklch(0.689 0.179 49.902 / 0.1);
+  --red: oklch(0.621 0.192 23.042);
+  --red-tint: oklch(0.621 0.192 23.042 / 0.1);
+  --tooltip-bg: oklch(0.272 0.008 264.435);
+  --tooltip-fg: oklch(0.976 0.002 247.839);
+  --shadow-btn: 0 0 0 1px var(--line-strong), 0 1px 2px oklch(0.2 0.02 264 / 0.05);
+  --shadow-card: 0 0 0 1px var(--line), 0 1px 2px oklch(0.2 0.02 264 / 0.04), 0 2px 6px oklch(0.2 0.02 264 / 0.04);
+  --shadow-raised: 0 0 0 1px var(--line), 0 2px 4px oklch(0.2 0.02 264 / 0.04), 0 6px 16px oklch(0.2 0.02 264 / 0.06);
+  --shadow-overlay: 0 0 0 1px var(--line), 0 4px 8px oklch(0.2 0.02 264 / 0.05), 0 16px 40px oklch(0.2 0.02 264 / 0.12);
+  --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.06);
 }
 
 @theme inline {
@@ -177,11 +174,9 @@ diffs-container {
   /* biome-ignore lint/complexity/noImportantStyles: Shiki writes inline backgrounds */
   background-color: transparent !important;
 }
-@media (prefers-color-scheme: light) {
-  .md pre[style*="--shiki-dark"],
-  .md pre[style*="--shiki-dark"] span {
-    color: var(--shiki-light);
-  }
+[data-scheme="light"] .md pre[style*="--shiki-dark"],
+[data-scheme="light"] .md pre[style*="--shiki-dark"] span {
+  color: var(--shiki-light);
 }
 
 /* Numbered code (definition and symbol snippets). */

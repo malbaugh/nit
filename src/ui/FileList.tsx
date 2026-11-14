@@ -11,6 +11,7 @@ import {
 } from "iconoir-react/regular";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { stats } from "./lines";
+import { SettingsButton } from "./Settings";
 import * as st from "./state";
 import { basename, dirname, IconButton, Kbd, ProgressRing } from "./ui";
 
@@ -172,6 +173,7 @@ export function FileList() {
           </span>
         </button>
         <span className="ml-auto flex items-center gap-1">
+          <SettingsButton />
           <Kbd k="Mod+k" quiet />
           <IconButton
             label="Search files and actions"

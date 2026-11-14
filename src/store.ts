@@ -72,6 +72,13 @@ export function openStore(review: string) {
     primary key (review, path)
   )`);
 
+  // User settings (the theme): shared by every review, unlike the rest of this file.
+  db.run("create table if not exists setting (key text primary key, value text not null)");
+  const getSetting = db.query<{ value: string }, [string]>("select value from setting where key = ?");
+  const putSetting = db.query(
+    "insert into setting (key, value) values (?, ?) on conflict (key) do update set value = excluded.value",
+  );
+
   const listDrafts = db.query<DraftRow, [string]>("select * from draft where review = ? order by path, start_line");
   const getDraft = db.query<DraftRow, [string, string]>("select * from draft where review = ? and id = ?");
   const upsert =
@@ -97,6 +104,13 @@ export function openStore(review: string) {
     },
     deleteDraft: (id: string) => {
       remove.run(review, id);
+    },
+    setting: (key: string): unknown => {
+      const row = getSetting.get(key);
+      return row ? JSON.parse(row.value) : null;
+    },
+    setSetting: (key: string, value: unknown) => {
+      putSetting.run(key, JSON.stringify(value));
     },
     viewed: () => listViewed.all(review).map((r) => r.path),
     setViewed: (path: string, viewed: boolean) => {

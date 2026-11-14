@@ -1,18 +1,19 @@
 import { getFiletypeFromFileName, getSharedHighlighter, type SupportedLanguages } from "@pierre/diffs";
 import { useEffect, useState } from "react";
+import { useTheme } from "./theme";
 
-const THEMES = { dark: "pierre-dark", light: "pierre-light" } as const;
+type Themes = { dark: string; light: string };
 const cache = new Map<string, Promise<string | null>>();
 
 export const langFor = (path: string) => getFiletypeFromFileName(path) ?? "";
 
-/** Highlights with the same Shiki themes as the diff; unknown languages fall back to plain text. */
-function highlight(source: string, lang: string) {
-  const key = `${lang}\u0000${source}`;
+/** Highlights with the same themes as the diff; unknown languages fall back to plain text. */
+function highlight(source: string, lang: string, themes: Themes) {
+  const key = `${themes.dark}\u0000${themes.light}\u0000${lang}\u0000${source}`;
   let p = cache.get(key);
   if (!p) {
-    p = getSharedHighlighter({ themes: [THEMES.dark, THEMES.light], langs: [lang as SupportedLanguages] })
-      .then((h) => h.codeToHtml(source, { lang, themes: THEMES, defaultColor: false }))
+    p = getSharedHighlighter({ themes: [themes.dark, themes.light], langs: [lang as SupportedLanguages] })
+      .then((h) => h.codeToHtml(source, { lang, themes, defaultColor: false }))
       .catch((e: unknown) => {
         console.warn(`nit: could not highlight ${lang}`, e);
         return null;
@@ -25,14 +26,15 @@ function highlight(source: string, lang: string) {
 /** A highlighted code block. With `startLine`, lines are numbered from it. */
 export function CodeBlock({ source, lang, startLine }: { source: string; lang: string; startLine?: number }) {
   const [html, setHtml] = useState<string | null>(null);
+  const { darkThemeName: dark, lightThemeName: light } = useTheme();
   useEffect(() => {
     let alive = true;
-    setHtml(null);
-    if (lang) highlight(source, lang).then((h) => alive && setHtml(h));
+    if (lang) highlight(source, lang, { dark, light }).then((h) => alive && setHtml(h));
+    else setHtml(null);
     return () => {
       alive = false;
     };
-  }, [source, lang]);
+  }, [source, lang, dark, light]);
   const numbered = startLine !== undefined;
   const style = numbered ? ({ counterReset: `line ${startLine - 1}` } as React.CSSProperties) : undefined;
   // Shiki escapes the source, so its HTML is safe to insert.

@@ -10,13 +10,14 @@ import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
 import { ReviewSheet } from "./ReviewSheet";
 import * as st from "./state";
+import { theme } from "./theme";
 import { toasts } from "./toasts";
 import { EmptyState, Kbd, TooltipProvider } from "./ui";
 
 const ICONS = { width: 15, height: 15, strokeWidth: 1.6 };
 
 // ?debug exposes the store for poking at state from the console.
-if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { nit: st });
+if (new URLSearchParams(location.search).has("debug")) Object.assign(window, { nit: st, nitThemes: theme });
 
 /** Base UI toasts (stacking, swipe to dismiss, timers pause on hover) in nit's look. */
 function Toasts() {

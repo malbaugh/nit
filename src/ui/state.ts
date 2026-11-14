@@ -51,6 +51,7 @@ type State = {
   outlineOpen: boolean;
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
+  settingsOpen: boolean;
   /** The pull request and its existing threads; null until the first answer from the server. */
   github: GitHubState | null;
   /** Files shown whole (every unchanged line expanded), by path. */
@@ -92,6 +93,7 @@ let state: State = {
   outlines: {},
   outlineOpen: stored("nit.outline") !== "0",
   reviewOpen: false,
+  settingsOpen: false,
   github: null,
   fullFiles: new Set(),
 };

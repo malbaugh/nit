@@ -7,6 +7,7 @@ import * as git from "./git";
 import { createGitHub } from "./github";
 import { createNavigator } from "./navigate";
 import { openStore } from "./store";
+import { themeBoot } from "./theme-boot";
 import type { Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
@@ -269,6 +270,15 @@ const serve = (p: number) =>
           }
         }),
       },
+      "/api/settings": {
+        PUT: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as { theme?: unknown } | null;
+          if (!body || typeof body.theme !== "object" || body.theme === null) return fail(400, "invalid body");
+          if (JSON.stringify(body.theme).length > 64_000) return fail(413, "too large");
+          store.setSetting("theme", body.theme);
+          return json({ ok: true });
+        }),
+      },
       "/api/viewed": {
         POST: guarded(async (req) => {
           const body = (await req.json().catch(() => null)) as {
@@ -284,7 +294,15 @@ const serve = (p: number) =>
     fetch: guarded(async (req) => {
       const path = new URL(req.url).pathname;
       if (dev && path === "/") await buildUI();
-      const file = Bun.file(join(uiDir, path === "/" ? "index.html" : path));
+      if (path === "/") {
+        // The saved theme goes in before first paint, so the page never flashes the default.
+        const html = await Bun.file(join(uiDir, "index.html")).text();
+        const theme = JSON.stringify(store.setting("theme")).replaceAll("<", "\\u003c");
+        return new Response(html.replace("</head>", `<script>window.nitTheme=${theme};${themeBoot}</script></head>`), {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      const file = Bun.file(join(uiDir, path));
       if (!path.includes("..") && (await file.exists())) return new Response(file);
       return fail(404, "not found");
     }),

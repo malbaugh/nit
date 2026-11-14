@@ -31,6 +31,7 @@ const q = (params: Record<string, string | number | undefined>) =>
 export type At = { path: string; side: Side; line: number };
 
 export const api = {
+  saveTheme: (theme: unknown) => call<{ ok: true }>("PUT", "/api/settings", { theme }),
   review: () => call<ReviewData>("GET", "/api/review"),
   file: (path: string, prev?: string) =>
     call<FileContents>("GET", `/api/file?${new URLSearchParams({ path, prev: prev ?? "" })}`),

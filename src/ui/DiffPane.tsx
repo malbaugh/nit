@@ -16,6 +16,7 @@ import * as nav from "./nav";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
 import { ThreadAnnotation } from "./Threads";
+import { useTheme } from "./theme";
 import { basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
 
 type Meta = { id: string } | { peek: true } | { thread: string };
@@ -85,10 +86,12 @@ export function DiffPane() {
   const cursor = st.useStore((s) => s.cursor);
   const anchor = st.useStore((s) => s.anchor);
 
+  const { darkThemeName: darkTheme, lightThemeName: lightTheme, resolvedColorScheme: scheme } = useTheme();
+
   const options = useMemo(
     () => ({
-      theme: { dark: "pierre-dark", light: "pierre-light" },
-      themeType: "system" as const,
+      theme: { dark: darkTheme, light: lightTheme },
+      themeType: scheme,
       diffStyle: style,
       expandUnchanged: full,
       diffIndicators: "bars" as const,
@@ -118,7 +121,7 @@ export function DiffPane() {
         void nav.lookup("definition", { col: t.lineCharStart });
       },
     }),
-    [style, full],
+    [style, full, darkTheme, lightTheme, scheme],
   );
 
   const peekAt = st.useStore((s) => s.peek?.at);
