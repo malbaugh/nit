@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { Draft, ReviewEvent } from "../types";
 import { api } from "./api";
 import { splitLabel } from "./Comments";
+import { copy } from "./Menu";
 import { draftsAsMarkdown } from "./review";
 import * as st from "./state";
 import { Button, basename, dirname, IconButton, Kbd, TextSegmented } from "./ui";
@@ -26,19 +27,15 @@ const preview = (body: string) =>
     .replace(/^\s*(#+|>|[-*+]( \[[ xX]\])?)\s+/, "")
     .trim();
 
-async function copyAll() {
+function copyAll() {
   const { drafts, files } = st.get();
-  try {
-    await navigator.clipboard.writeText(
-      draftsAsMarkdown(
-        drafts,
-        files.map((f) => f.name),
-      ),
-    );
-    st.toast(`Copied ${drafts.length} ${drafts.length === 1 ? "comment" : "comments"} as Markdown`);
-  } catch {
-    st.toast("Couldn't copy to the clipboard.");
-  }
+  copy(
+    draftsAsMarkdown(
+      drafts,
+      files.map((f) => f.name),
+    ),
+    `${drafts.length} ${drafts.length === 1 ? "comment" : "comments"} as Markdown`,
+  );
 }
 
 const VERDICTS: { value: ReviewEvent; label: string }[] = [

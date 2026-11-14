@@ -7,17 +7,25 @@ import type {
 import { FileDiff } from "@pierre/diffs/react";
 import {
   AlignJustify,
+  ArrowRight,
   ChatPlusIn,
   Check,
+  Copy,
+  EditPencil,
   Expand,
+  Link,
+  List,
   NavArrowRight,
+  Page,
   SidebarExpand,
   ViewColumns2,
 } from "iconoir-react/regular";
 import { useCallback, useEffect, useMemo } from "react";
+import type { Side } from "../types";
 import { HIGHLIGHTER } from "./Code";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
+import { copy, type MenuItem, RightClick, selectedText } from "./Menu";
 import * as nav from "./nav";
 import { OutlineToggle } from "./Outline";
 import { PeekAnnotation } from "./Peek";
@@ -107,6 +115,128 @@ const STYLE_OPTIONS = [
   { value: "split" as const, label: "Split", icon: <ViewColumns2 width={14} height={14} />, keys: "s" },
   { value: "unified" as const, label: "Unified", icon: <AlignJustify width={14} height={14} />, keys: "s" },
 ];
+
+/** A GitHub link to lines of the PR's head commit, when the PR is known. */
+function githubLink(path: string, start: number, end: number) {
+  const gh = st.get().github;
+  if (gh?.status !== "ready") return null;
+  const repo = gh.pr.url.replace(/\/pull\/\d+$/, "");
+  return `${repo}/blob/${gh.pr.headSha}/${path}#L${start}${end !== start ? `-L${end}` : ""}`;
+}
+
+/**
+ * Right-click on a line: it becomes the cursor (unless it's inside the selection) and the
+ * menu acts on it; on a word, definition and references name it. Cards, text boxes and the
+ * suggestion editor keep the browser's menu.
+ */
+function lineMenu(target: Element): MenuItem[] | null {
+  const row = target.closest<HTMLElement>("[data-line]");
+  const file = st.currentFile();
+  if (!row || !file || target.closest("[contenteditable=true]")) return null;
+  const line = Number(row.dataset.line);
+  const type = row.dataset.lineType;
+  const side: Side =
+    type === "change-deletion"
+      ? "deletions"
+      : type === "change-addition"
+        ? "additions"
+        : row.closest("[data-deletions]")
+          ? "deletions"
+          : "additions";
+  const sel = st.selection();
+  if (!sel || sel.side !== side || line < sel.start || line > sel.end)
+    st.set({ cursor: { side, line }, anchor: null, focused: null });
+  const range = st.selection() ?? { side, start: line, end: line };
+  const word = target.closest<HTMLElement>("[data-char]")?.textContent?.trim() ?? "";
+  const name = /^[A-Za-z_$][\w$]*$/.test(word) ? word : null;
+  const where = range.start === range.end ? `${range.start}` : `${range.start}-${range.end}`;
+  const path = side === "deletions" ? (file.prevName ?? file.name) : file.name;
+  const link = side === "additions" ? githubLink(path, range.start, range.end) : null;
+  const viewed = st.get().viewed.has(file.name);
+  const full = st.get().fullFiles.has(file.name);
+  const picked = selectedText(target);
+  const items: MenuItem[] = [
+    ...(picked
+      ? [{ label: "Copy", icon: <Copy />, keys: "Mod+c", run: () => copy(picked, "the selection") }, null]
+      : []),
+    { label: "Comment", icon: <ChatPlusIn />, keys: "c", run: st.startComment },
+    ...(side === "additions"
+      ? [
+          {
+            label: "Suggest a change",
+            icon: <EditPencil />,
+            keys: "Mod+Shift+s",
+            run: () => {
+              st.startComment();
+              const id = st.get().editing;
+              if (id) void suggest.start(id);
+            },
+          },
+        ]
+      : []),
+    null,
+    ...(name
+      ? [
+          {
+            label: (
+              <>
+                Go to definition of <code className="font-mono text-[12px] text-ink">{name}</code>
+              </>
+            ),
+            icon: <ArrowRight />,
+            keys: "g d",
+            run: () => void nav.lookup("definition", { name }),
+          },
+          {
+            label: (
+              <>
+                Find references to <code className="font-mono text-[12px] text-ink">{name}</code>
+              </>
+            ),
+            icon: <List />,
+            keys: "g r",
+            run: () => void nav.lookup("references", { name }),
+          },
+          null,
+        ]
+      : []),
+    {
+      label: range.start === range.end ? "Copy line" : "Copy lines",
+      icon: <Copy />,
+      run: () =>
+        void st.fileContents(file).then((c) => {
+          const text = (side === "deletions" ? c.old : c.new) ?? "";
+          copy(
+            text
+              .split("\n")
+              .slice(range.start - 1, range.end)
+              .join("\n"),
+            range.start === range.end ? "the line" : "the lines",
+          );
+        }),
+    },
+    {
+      label: `Copy ${path.split("/").pop()}:${where}`,
+      icon: <Page />,
+      run: () => copy(`${path}:${where}`, "the location"),
+    },
+    ...(link ? [{ label: "Copy GitHub link", icon: <Link />, run: () => copy(link, "the GitHub link") }] : []),
+    null,
+    {
+      label: viewed ? "Mark as not viewed" : "Mark as viewed",
+      icon: <Check />,
+      keys: "v",
+      run: () => st.toggleViewed(),
+    },
+    {
+      label: full ? "Fold unchanged lines" : "Show the whole file",
+      icon: <Expand />,
+      keys: "f",
+      run: () => void st.setFullFile(file.name, !full),
+    },
+  ];
+  return items;
+}
 
 export function DiffPane() {
   const file = st.useStore((s) => st.currentFile(s));
@@ -298,16 +428,18 @@ export function DiffPane() {
         {outlineOpen ? null : <OutlineToggle />}
       </header>
       <div data-diff-scroll className="min-h-0 flex-1 overflow-auto">
-        <FileDiff<Meta, undefined>
-          key={file.name}
-          fileDiff={file}
-          options={options}
-          lineAnnotations={annotations}
-          renderAnnotation={renderAnnotation}
-          selectedLines={selected}
-          edit={!!suggestingHere && !suggestingHere.ending}
-          onEditComplete={onEditComplete}
-        />
+        <RightClick resolve={lineMenu}>
+          <FileDiff<Meta, undefined>
+            key={file.name}
+            fileDiff={file}
+            options={options}
+            lineAnnotations={annotations}
+            renderAnnotation={renderAnnotation}
+            selectedLines={selected}
+            edit={!!suggestingHere && !suggestingHere.ending}
+            onEditComplete={onEditComplete}
+          />
+        </RightClick>
       </div>
     </main>
   );

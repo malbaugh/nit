@@ -1,7 +1,8 @@
-import { SidebarCollapse, SidebarExpand } from "iconoir-react/regular";
+import { ArrowRight, Copy, List, SidebarCollapse, SidebarExpand } from "iconoir-react/regular";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
+import { copy, type MenuItem, RightClick } from "./Menu";
 import * as nav from "./nav";
 import * as st from "./state";
 import { fuzzy, IconButton, paintMatches, Resizer, TextSegmented } from "./ui";
@@ -74,6 +75,32 @@ export function OutlineToggle() {
       {open ? <SidebarCollapse className="-scale-x-100" /> : <SidebarExpand className="-scale-x-100" />}
     </IconButton>
   );
+}
+
+/** Right-click on a symbol: go to it, find its references, copy its name. */
+function symbolMenu(target: Element): MenuItem[] | null {
+  const row = target.closest<HTMLElement>("[data-symbol]");
+  const name = row?.dataset.symbol;
+  if (!row || !name) return null;
+  const go = () => row.click();
+  return [
+    { label: "Go to", icon: <ArrowRight />, run: go },
+    {
+      label: (
+        <>
+          Find references to <code className="font-mono text-[12px] text-ink">{name}</code>
+        </>
+      ),
+      icon: <List />,
+      keys: "g r",
+      run: () => {
+        go();
+        void nav.lookup("references", { name });
+      },
+    },
+    null,
+    { label: "Copy name", icon: <Copy />, run: () => copy(name, "the name") },
+  ];
 }
 
 export function OutlinePanel() {
@@ -182,39 +209,41 @@ export function OutlinePanel() {
           className="h-7 w-full rounded-control bg-field px-2.5 text-[12.5px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
         />
       </div>
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
-        {!outline ? <p className="px-2 py-2 text-[12px] text-ink-3">Reading symbols…</p> : null}
-        {outline && !outline.new && !outline.old ? (
-          <p className="px-2 py-2 text-[12px] leading-relaxed text-ink-3">No outline for this file type yet.</p>
-        ) : null}
-        {rows.map((e) => (
-          <SymbolRow
-            key={`${e.line}:${e.name}`}
-            entry={e}
-            active={here === e || (here?.line === e.line && here.name === e.name)}
-            side="additions"
-          />
-        ))}
-        {view && filter.trim() && !rows.length ? (
-          <p className="px-2 py-2 text-[12px] text-ink-3">No symbol matches “{filter.trim()}”.</p>
-        ) : null}
-        {view && onlyChanged && !filter.trim() && !rows.length ? (
-          <p className="px-2 py-2 text-[12px] text-ink-3">No symbols changed in this file.</p>
-        ) : null}
-        {view?.removed.length ? (
-          <>
-            <div className="px-2 pt-3 pb-1 text-[11.5px] font-medium text-ink-3">Removed</div>
-            {view.removed.map((s) => (
-              <SymbolRow
-                key={`old:${s.line}:${s.name}`}
-                entry={{ ...s, depth: 0, status: null }}
-                removed
-                side="deletions"
-              />
-            ))}
-          </>
-        ) : null}
-      </div>
+      <RightClick resolve={symbolMenu} className="flex min-h-0 flex-1 flex-col">
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
+          {!outline ? <p className="px-2 py-2 text-[12px] text-ink-3">Reading symbols…</p> : null}
+          {outline && !outline.new && !outline.old ? (
+            <p className="px-2 py-2 text-[12px] leading-relaxed text-ink-3">No outline for this file type yet.</p>
+          ) : null}
+          {rows.map((e) => (
+            <SymbolRow
+              key={`${e.line}:${e.name}`}
+              entry={e}
+              active={here === e || (here?.line === e.line && here.name === e.name)}
+              side="additions"
+            />
+          ))}
+          {view && filter.trim() && !rows.length ? (
+            <p className="px-2 py-2 text-[12px] text-ink-3">No symbol matches “{filter.trim()}”.</p>
+          ) : null}
+          {view && onlyChanged && !filter.trim() && !rows.length ? (
+            <p className="px-2 py-2 text-[12px] text-ink-3">No symbols changed in this file.</p>
+          ) : null}
+          {view?.removed.length ? (
+            <>
+              <div className="px-2 pt-3 pb-1 text-[11.5px] font-medium text-ink-3">Removed</div>
+              {view.removed.map((s) => (
+                <SymbolRow
+                  key={`old:${s.line}:${s.name}`}
+                  entry={{ ...s, depth: 0, status: null }}
+                  removed
+                  side="deletions"
+                />
+              ))}
+            </>
+          ) : null}
+        </div>
+      </RightClick>
     </aside>
   );
 }
@@ -235,6 +264,7 @@ function SymbolRow({
     <button
       type="button"
       onClick={() => void nav.revealSymbol(entry, side)}
+      data-symbol={entry.name}
       title={`${entry.kind} ${entry.name}, lines ${entry.line}–${entry.endLine}`}
       className={`flex h-7 w-full min-w-0 items-center gap-2 rounded-control pr-2 text-left transition-[background-color] duration-100 [@media(hover:hover)]:hover:bg-hover ${
         active ? "bg-hover-2" : ""

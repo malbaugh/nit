@@ -328,6 +328,16 @@ export function toggleStyle() {
   set({ style: state.style === "split" ? "unified" : "split" });
 }
 
+/** Marks several files viewed or not at once (a folder from the tree's menu). */
+export function setViewed(paths: string[], viewed: boolean) {
+  const next = new Set(state.viewed);
+  for (const p of paths) viewed ? next.add(p) : next.delete(p);
+  set({ viewed: next });
+  Promise.all(paths.map((p) => api.setViewed(p, viewed))).catch(() =>
+    toast("Couldn't save viewed state. Is nit still running?"),
+  );
+}
+
 export function toggleViewed(advance = true) {
   const file = currentFile();
   if (!file) return;

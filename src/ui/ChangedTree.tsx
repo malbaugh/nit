@@ -1,8 +1,10 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileTreeRowDecoration, GitStatus } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
+import { ChatPlusIn, CheckCircle, Copy, Link, Page } from "iconoir-react/regular";
 import { useEffect } from "react";
 import { stats } from "./lines";
+import { copy, type MenuItem, RightClick } from "./Menu";
 import * as st from "./state";
 
 const STATUS: Record<FileDiffMetadata["type"], GitStatus> = {
@@ -74,6 +76,52 @@ const TREE_CSS = `
   max-width: none; font-family: var(--font-mono); font-size: 11px; font-variant-numeric: tabular-nums;
 }`;
 
+/** Right-click on a row: a file's actions, or marking a whole folder viewed. */
+function treeMenu(target: Element): MenuItem[] | null {
+  const row = target.closest<HTMLElement>("[data-item-path]");
+  const path = row?.dataset.itemPath?.replace(/\/$/, "");
+  if (!row || !path) return null;
+  const s = st.get();
+  if (row.dataset.itemType !== "file") {
+    const inside = s.files.map((f) => f.name).filter((n) => n.startsWith(`${path}/`));
+    const all = inside.length > 0 && inside.every((n) => s.viewed.has(n));
+    return [
+      {
+        label: all ? "Mark folder as not viewed" : `Mark ${inside.length} files as viewed`,
+        icon: <CheckCircle />,
+        run: () => st.setViewed(inside, !all),
+      },
+      { label: "Copy folder path", icon: <Copy />, run: () => copy(path, "the path") },
+    ];
+  }
+  const index = s.files.findIndex((f) => f.name === path);
+  if (index === -1) return null;
+  const open = () => st.openFile(index);
+  const gh = s.github;
+  const link = gh?.status === "ready" ? `${gh.pr.url.replace(/\/pull\/\d+$/, "")}/blob/${gh.pr.headSha}/${path}` : null;
+  const viewed = s.viewed.has(path);
+  return [
+    { label: "Open", icon: <Page />, run: open },
+    {
+      label: viewed ? "Mark as not viewed" : "Mark as viewed",
+      icon: <CheckCircle />,
+      run: () => st.setViewed([path], !viewed),
+    },
+    {
+      label: "Comment on file",
+      icon: <ChatPlusIn />,
+      keys: "C",
+      run: () => {
+        open();
+        st.startFileComment();
+      },
+    },
+    null,
+    { label: "Copy path", icon: <Copy />, run: () => copy(path, "the path") },
+    ...(link ? [{ label: "Copy GitHub link", icon: <Link />, run: () => copy(link, "the GitHub link") }] : []),
+  ];
+}
+
 /** The review's changed files as a tree (Pierre Trees). Selecting a file opens it. */
 export function ChangedTree() {
   const files = st.useStore((s) => s.files);
@@ -125,5 +173,9 @@ export function ChangedTree() {
     model.scrollToPath(current, { focus: false, offset: "nearest" });
   }, [model, current, files]);
 
-  return <FileTree model={model} className="min-h-0 flex-1" style={TREE_STYLE} />;
+  return (
+    <RightClick resolve={treeMenu} className="flex min-h-0 flex-1 flex-col">
+      <FileTree model={model} className="min-h-0 flex-1" style={TREE_STYLE} />
+    </RightClick>
+  );
 }
