@@ -1,24 +1,50 @@
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
+import { byLengthAsc, Fzf } from "fzf";
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from "react";
 import { keyLabel } from "./actions";
 
-/** Subsequence match; lower is better, null is no match. Contiguous and prefix hits win. */
-export function score(query: string, text: string) {
-  if (!query) return 0;
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  let at = -1;
-  let gaps = 0;
-  for (const ch of q) {
-    const next = t.indexOf(ch, at + 1);
-    if (next === -1) return null;
-    gaps += next - at - 1;
-    at = next;
+/**
+ * fzf's own algorithm (camelCase and word-boundary bonuses), best first, with the matched
+ * character positions for highlighting.
+ */
+export function fuzzy<T>(list: readonly T[], query: string, text: (t: T) => string, limit = Infinity) {
+  if (!query) return list.map((item) => ({ item, positions: [] as number[] }));
+  // fzf's option types are conditional on the item type and can't resolve for a generic T.
+  const fzf = new Fzf(list as readonly unknown[], {
+    selector: text as (v: unknown) => string,
+    tiebreakers: [byLengthAsc],
+    limit,
+  });
+  return fzf.find(query).map((r) => ({ item: r.item as T, positions: [...r.positions] }));
+}
+
+/**
+ * Paints matched characters with the CSS Custom Highlight API: no wrapper elements, no
+ * re-render. Each `[data-hl=key]` element's text gets the positions `marks` holds for it.
+ */
+export function paintMatches(name: string, root: ParentNode | null, marks: Map<string, number[]>) {
+  if (typeof CSS === "undefined" || !("highlights" in CSS)) return;
+  const ranges: Range[] = [];
+  for (const el of root?.querySelectorAll<HTMLElement>("[data-hl]") ?? []) {
+    const text = el.firstChild;
+    const pos = marks.get(el.dataset.hl ?? "");
+    if (!pos?.length || text?.nodeType !== Node.TEXT_NODE) continue;
+    const len = (text as Text).length;
+    const sorted = pos.filter((p) => p < len).sort((a, b) => a - b);
+    for (let i = 0; i < sorted.length; ) {
+      let j = i;
+      while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+      const r = new Range();
+      r.setStart(text, sorted[i]);
+      r.setEnd(text, sorted[j] + 1);
+      ranges.push(r);
+      i = j + 1;
+    }
   }
-  const contiguous = t.indexOf(q);
-  return gaps + (contiguous === -1 ? 0 : -100 - (contiguous === 0 ? 50 : 0));
+  if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
+  else CSS.highlights.delete(name);
 }
 
 export const basename = (p: string) => p.slice(p.lastIndexOf("/") + 1);

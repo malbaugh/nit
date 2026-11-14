@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Side, Symbol as Sym } from "../types";
 import { changedLines } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { Kbd, Resizer, score, TextSegmented } from "./ui";
+import { fuzzy, Kbd, paintMatches, Resizer, TextSegmented } from "./ui";
 
 /** One letter per kind, coloured quietly so the names stay the focus. */
 const KIND: Record<string, { letter: string; tone: string }> = {
@@ -89,15 +89,23 @@ export function OutlinePanel() {
   }, [file, outline]);
 
   const here = cursor?.side === "additions" ? nav.enclosing(outline?.new, cursor.line).at(-1) : undefined;
-  const shown = view ? (onlyChanged ? view.all.filter((e) => e.status) : view.all) : [];
-  // Filtering flattens the tree and ranks by match, as the palette does.
-  const rows = filter.trim()
-    ? shown
-        .map((e) => ({ e, s: score(filter.trim(), e.name) }))
-        .filter((x): x is { e: Entry; s: number } => x.s !== null)
-        .sort((a, b) => a.s - b.s)
-        .map((x) => ({ ...x.e, depth: 0 }))
-    : shown;
+  const shown = useMemo(
+    () => (view ? (onlyChanged ? view.all.filter((e) => e.status) : view.all) : []),
+    [view, onlyChanged],
+  );
+  // Filtering flattens the tree and ranks by fzf; matched letters are painted, not wrapped.
+  const q = filter.trim();
+  const found = useMemo(() => (q ? fuzzy(shown, q, (e) => e.name) : null), [shown, q]);
+  const rows = found ? found.map((r) => ({ ...r.item, depth: 0 })) : shown;
+  const listRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    paintMatches(
+      "nit-outline",
+      listRef.current,
+      new Map(found?.map((r) => [`${r.item.line}:${r.item.name}`, r.positions])),
+    );
+  }, [found]);
+  useEffect(() => () => void CSS.highlights?.delete("nit-outline"), []);
 
   return (
     <aside
@@ -156,7 +164,7 @@ export function OutlinePanel() {
           className="h-7 w-full rounded-control bg-field px-2.5 text-[12.5px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5">
         {!outline ? <p className="px-2 py-2 text-[12px] text-ink-3">Reading symbols…</p> : null}
         {outline && !outline.new && !outline.old ? (
           <p className="px-2 py-2 text-[12px] leading-relaxed text-ink-3">No outline for this file type yet.</p>
@@ -223,7 +231,7 @@ function SymbolRow({
       <span
         className={`min-w-0 flex-1 truncate text-[12.5px] ${removed ? "text-ink-3 line-through decoration-red/60" : active ? "text-ink" : "text-ink-2"}`}
       >
-        {entry.name}
+        <span data-hl={`${entry.line}:${entry.name}`}>{entry.name}</span>
       </span>
       {entry.status ? (
         <span

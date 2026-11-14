@@ -1,11 +1,11 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { CodeBracketsSquare, Page, Search } from "iconoir-react/regular";
-import { type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
+import { type ReactNode, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { actions, available } from "./actions";
 import { stats } from "./lines";
 import * as nav from "./nav";
 import * as st from "./state";
-import { basename, dirname, Kbd, score } from "./ui";
+import { basename, dirname, fuzzy, Kbd, paintMatches } from "./ui";
 
 type Item = {
   id: string;
@@ -38,7 +38,7 @@ function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const items = useMemo(() => {
+  const result = useMemo(() => {
     const fileItems: Item[] = files.map((f, i) => {
       const { add, del } = stats(f);
       return {
@@ -77,17 +77,28 @@ function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) 
           : deferred
             ? [...actionItems, ...fileItems]
             : actionItems;
-    if (!needle) return pool;
-    return pool
-      .map((it) => ({
-        it,
-        s: score(needle, mode === "symbols" ? it.label : it.hint ? `${it.hint}/${it.label}` : it.label),
-      }))
-      .filter((x): x is { it: Item; s: number } => x.s !== null)
-      .sort((a, b) => a.s - b.s)
-      .slice(0, 60)
-      .map((x) => x.it);
+    if (!needle) return { list: pool, marks: new Map<string, number[]>() };
+    // Files match on dir/name; the hits split back onto the two spans for painting.
+    const text = (it: Item) => (mode !== "symbols" && it.hint ? `${it.hint}/${it.label}` : it.label);
+    const found = fuzzy(pool, needle, text, 60);
+    const marks = new Map<string, number[]>();
+    for (const { item, positions } of found) {
+      const cut = mode !== "symbols" && item.hint ? item.hint.length + 1 : 0;
+      marks.set(
+        `${item.id}|l`,
+        positions.filter((p) => p >= cut).map((p) => p - cut),
+      );
+      if (cut)
+        marks.set(
+          `${item.id}|h`,
+          positions.filter((p) => p < cut - 1),
+        );
+    }
+    return { list: found.map((r) => r.item), marks };
   }, [mode, files, deferred, outline]);
+  const items = result.list;
+  useLayoutEffect(() => paintMatches("nit-palette", listRef.current, result.marks), [result]);
+  useEffect(() => () => void CSS.highlights?.delete("nit-palette"), []);
 
   const close = () => st.set({ palette: null });
   const run = (it: Item | undefined) => {
@@ -118,6 +129,10 @@ function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) 
             <Search width={16} height={16} className="shrink-0 text-ink-3" />
             <input
               ref={inputRef}
+              // Focus in the same frame the palette opens, so keys typed right after ⌘K land here
+              // (the dialog's own initial focus can arrive a few hundred ms later).
+              // biome-ignore lint/a11y/noAutofocus: the palette exists to type into
+              autoFocus
               role="combobox"
               aria-expanded
               aria-controls="palette-list"
@@ -176,8 +191,14 @@ function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) 
                   >
                     {it.icon}
                   </span>
-                  <span className={`shrink-0 truncate ${i === active ? "text-ink" : "text-ink-2"}`}>{it.label}</span>
-                  {it.hint ? <span className="min-w-0 truncate text-[12px] text-ink-3">{it.hint}</span> : null}
+                  <span className={`shrink-0 truncate ${i === active ? "text-ink" : "text-ink-2"}`}>
+                    <span data-hl={`${it.id}|l`}>{it.label}</span>
+                  </span>
+                  {it.hint ? (
+                    <span className="min-w-0 truncate text-[12px] text-ink-3">
+                      <span data-hl={`${it.id}|h`}>{it.hint}</span>
+                    </span>
+                  ) : null}
                   <span className="ml-auto flex shrink-0 items-center gap-1">
                     {it.meta}
                     {it.keys?.map((k) => (

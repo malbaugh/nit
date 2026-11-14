@@ -180,6 +180,13 @@ pre[style*="--hls-dark"] span {
   color: var(--hls-light);
 }
 
+/* Fuzzy-match letters in the outline filter and the palette (CSS Custom Highlight API). */
+::highlight(nit-outline),
+::highlight(nit-palette) {
+  background-color: var(--orange-tint);
+  color: var(--ink);
+}
+
 /* Numbered code (definition and symbol snippets). */
 .code-numbered .line::before {
   counter-increment: line;
