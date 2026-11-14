@@ -1,6 +1,7 @@
 import { createElement, memo, type ReactNode, useRef } from "react";
 import { type Components, Streamdown } from "streamdown";
 import { CodeBlock } from "./Code";
+import { SuggestionDiff } from "./SuggestionDiff";
 
 function SuggestionBlock({ source }: { source: string }) {
   return (
@@ -58,9 +59,12 @@ export const Markdown = memo(function Markdown({
   source,
   onToggleTask,
   streaming = false,
+  suggestionBase = null,
 }: {
   source: string;
   onToggleTask?: (index: number) => void;
+  /** The lines a ```suggestion block replaces: with them it's drawn as a diff, as on GitHub. */
+  suggestionBase?: string[] | null;
   /** The text is still arriving (an answer from Claude). */
   streaming?: boolean;
 }) {
@@ -86,7 +90,12 @@ export const Markdown = memo(function Markdown({
       const classes = Array.isArray(code.properties?.className) ? code.properties.className.join(" ") : "";
       const lang = /language-([\w+-]+)/.exec(classes)?.[1];
       const source = hastText(code).replace(/\n$/, "");
-      if (lang === "suggestion") return <SuggestionBlock source={source} />;
+      if (lang === "suggestion")
+        return suggestionBase?.length ? (
+          <SuggestionDiff before={suggestionBase} after={source === "" ? [] : source.split("\n")} />
+        ) : (
+          <SuggestionBlock source={source} />
+        );
       // As on GitHub, a fence without a language is plain text; it's usually prose (bot
       // prompts, logs), so it wraps instead of scrolling sideways.
       if (!lang)

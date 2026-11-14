@@ -1,5 +1,5 @@
 import { ChatBubble, CheckCircle, OpenNewWindow, Undo } from "iconoir-react/regular";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Thread, ThreadComment } from "../types";
 import { ago, DraftView, Markdown } from "./Comments";
 import * as st from "./state";
@@ -27,7 +27,40 @@ function Avatar({ c, size = 20 }: { c: ThreadComment; size?: number }) {
   );
 }
 
-function Comment({ c }: { c: ThreadComment }) {
+/**
+ * The lines a thread's ```suggestion replaces, read from the file as GitHub does, so it shows as
+ * a diff. Only for a current thread on new-side lines (where GitHub allows suggestions); an
+ * outdated thread's lines have moved on, so its suggestion shows on its own.
+ */
+function useSuggestionBase(thread: Thread | undefined) {
+  const [base, setBase] = useState<string[] | null>(null);
+  const wants =
+    !!thread &&
+    !thread.outdated &&
+    thread.subject === "line" &&
+    thread.line !== null &&
+    thread.side === "additions" &&
+    thread.comments.some((c) => c.body.includes("```suggestion"));
+  const from = thread?.startLine ?? thread?.line ?? 0;
+  const to = thread?.line ?? 0;
+  const path = thread?.path;
+  useEffect(() => {
+    setBase(null);
+    const file = wants ? st.get().files.find((f) => f.name === path) : undefined;
+    if (!file) return;
+    let alive = true;
+    st.fileContents(file).then(
+      (c) => alive && c.new !== null && setBase(c.new.split("\n").slice(from - 1, to)),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+  }, [wants, path, from, to]);
+  return base;
+}
+
+function Comment({ c, suggestionBase }: { c: ThreadComment; suggestionBase: string[] | null }) {
   return (
     <div className="flex gap-2.5 py-2.5">
       <Avatar c={c} />
@@ -39,7 +72,7 @@ function Comment({ c }: { c: ThreadComment }) {
           </a>
         </div>
         <div className="mt-0.5">
-          <Markdown source={c.body} />
+          <Markdown source={c.body} suggestionBase={suggestionBase} />
         </div>
       </div>
     </div>
@@ -59,6 +92,7 @@ export function ThreadAnnotation({ id }: { id: string }) {
   );
   const focused = st.useStore((s) => s.focused === id);
   const [open, setOpen] = useState<boolean | null>(null);
+  const suggestionBase = useSuggestionBase(thread);
   if (!thread) return null;
   const expanded = open ?? !thread.resolved;
   const first = thread.comments[0];
@@ -77,7 +111,7 @@ export function ThreadAnnotation({ id }: { id: string }) {
           <>
             <div className="divide-y divide-line px-3.5">
               {thread.comments.map((c) => (
-                <Comment key={c.id} c={c} />
+                <Comment key={c.id} c={c} suggestionBase={suggestionBase} />
               ))}
             </div>
             {replyIds

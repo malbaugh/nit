@@ -239,6 +239,9 @@ export async function load() {
       : // Keys that change with the patch let the highlight pool reuse work when you switch back.
         parsePatchFiles(data.patch, { cacheKeyPrefix: `p${hashOf(data.patch)}` })
           .flatMap((p) => p.files)
+          // A new or deleted file's patch already holds every line of it. Pierre won't hydrate
+          // those (and needn't); left partial, suggestions and the whole-file view refused them.
+          .map((f) => (f.type === "new" || f.type === "deleted" ? { ...f, isPartial: false } : f))
           .sort((a, b) => treeOrder(a.name, b.name));
     const before = currentFile()?.name;
     set((s) => {
@@ -254,7 +257,11 @@ export async function load() {
           return mine && (unsaved.has(d.id) || mine.updatedAt > d.updatedAt) ? mine : d;
         }),
         ...s.drafts.filter(
-          (d) => !server.has(d.id) && (unsaved.has(d.id) || d.id === s.editing || d.updatedAt >= requested),
+          (d) =>
+            !server.has(d.id) &&
+            // A new comment isn't saved until it has text; while its suggestion is being typed
+            // into the diff it isn't the one open either, but it's still yours.
+            (unsaved.has(d.id) || d.id === s.editing || d.id === s.suggesting?.draftId || d.updatedAt >= requested),
         ),
       ];
       return {

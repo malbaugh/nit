@@ -22,13 +22,20 @@ import { Note, OutcomeChip } from "./AgentPanel";
 import * as agent from "./agent";
 import * as md from "./markdown-edit";
 import * as nav from "./nav";
+import { SuggestionDiff } from "./SuggestionDiff";
 import * as st from "./state";
 import * as suggest from "./suggest";
 import { Button, IconButton, Kbd, Tooltip } from "./ui";
 
 // The Markdown parser is the heaviest piece of the UI; load it after the diff has painted.
 const LazyMarkdown = lazy(() => import("./Markdown").then((m) => ({ default: m.Markdown })));
-export function Markdown(props: { source: string; path?: string; onToggleTask?: (index: number) => void }) {
+export function Markdown(props: {
+  source: string;
+  path?: string;
+  onToggleTask?: (index: number) => void;
+  /** The lines a ```suggestion block replaces, to draw it as a diff. */
+  suggestionBase?: string[] | null;
+}) {
   return (
     <Suspense fallback={<p className="md whitespace-pre-wrap">{props.source}</p>}>
       <LazyMarkdown {...props} />
@@ -425,6 +432,7 @@ function Card({ draft, focused }: { draft: Draft; focused: boolean }) {
         <div className="mt-1">
           <Markdown
             source={rest}
+            suggestionBase={draft.anchor}
             onToggleTask={(i) => st.updateDraft(draft.id, { body: md.toggleTask(draft.body, i) })}
           />
         </div>
@@ -522,32 +530,6 @@ function AgentOutcome({ id }: { id: string }) {
       <Button tone="ghost" className="-my-0.5 h-6 shrink-0 px-2" onClick={() => st.removeDraft(id)}>
         Resolve
       </Button>
-    </div>
-  );
-}
-
-function SuggestionDiff({ before, after }: { before: string[]; after: string[] }) {
-  return (
-    <div className="mt-2.5 overflow-hidden rounded-control shadow-[0_0_0_1px_var(--line)]">
-      <div className="bg-inset px-2.5 py-1 text-[11.5px] font-medium text-ink-3 shadow-[0_1px_0_var(--line)]">
-        Suggested change
-      </div>
-      <div className="overflow-x-auto font-mono text-[12.5px] leading-5">
-        {before.map((l, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list of lines; position is the identity
-          <div key={`b${i}`} className="flex bg-red-tint pr-3 whitespace-pre text-ink-2">
-            <span className="w-7 shrink-0 select-none text-center text-red">−</span>
-            {l || " "}
-          </div>
-        ))}
-        {after.map((l, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list of lines; position is the identity
-          <div key={`a${i}`} className="flex bg-green-tint pr-3 whitespace-pre text-ink">
-            <span className="w-7 shrink-0 select-none text-center text-green">+</span>
-            {l || " "}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

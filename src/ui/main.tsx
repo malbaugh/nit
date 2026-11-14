@@ -87,7 +87,8 @@ function App() {
     // Coming back to the tab picks up edits made in the editor or by an agent.
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      if (st.get().editing === null) void st.load();
+      // Not while a suggestion is typed into the diff: a reload would swap the file under the editor.
+      if (st.get().editing === null && !st.get().suggesting) void st.load();
       void st.loadGitHub();
     };
     document.addEventListener("visibilitychange", onVisible);
