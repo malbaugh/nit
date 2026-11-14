@@ -26,3 +26,31 @@ export type ReviewData = {
 };
 
 export type FileContents = { old: string | null; new: string | null };
+
+/** A definition found by a grammar's tags query. Lines are 1-based. */
+export type Symbol = {
+  name: string;
+  /** function, method, class, interface, module, type, constant… (from the query's capture name) */
+  kind: string;
+  line: number;
+  endLine: number;
+  nameLine: number;
+  nameCol: number;
+};
+
+/** A place in the repo, for definitions and references. */
+export type Location = {
+  path: string;
+  line: number;
+  col: number;
+  /** The line's text, trimmed. */
+  text: string;
+  /** The definition's code (up to ~15 lines), when this is a definition. */
+  snippet?: string;
+  snippetStart?: number;
+  kind?: string;
+  /** The file is part of this review's diff. */
+  inDiff: boolean;
+  /** The line itself was added or changed in this diff. */
+  changed: boolean;
+};

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { handleKey } from "./actions";
 import { DiffPane } from "./DiffPane";
 import { FileList } from "./FileList";
+import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
 import * as st from "./state";
 import { EmptyState, Kbd } from "./ui";
@@ -43,6 +44,7 @@ function App() {
   const error = st.useStore((s) => s.error);
   const count = st.useStore((s) => s.files.length);
   const sidebar = st.useStore((s) => s.sidebar);
+  const outlineOpen = st.useStore((s) => s.outlineOpen);
 
   useEffect(() => {
     st.load().then(st.restoreBackups);
@@ -79,6 +81,7 @@ function App() {
     <div className="flex h-full">
       {sidebar ? <FileList /> : null}
       <DiffPane />
+      {outlineOpen ? <OutlinePanel /> : null}
       <Palette />
       <Toast />
     </div>

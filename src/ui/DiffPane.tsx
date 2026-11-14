@@ -1,13 +1,15 @@
-import type { DiffLineAnnotation, SelectedLineRange } from "@pierre/diffs";
+import type { DiffLineAnnotation, DiffTokenEventBaseProps, SelectedLineRange } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
-import { AlignJustify, ChatPlusIn, Check, ViewColumns2 } from "iconoir-react/regular";
+import { AlignJustify, ChatPlusIn, Check, NavArrowRight, SidebarExpand, ViewColumns2 } from "iconoir-react/regular";
 import { useCallback, useEffect, useMemo } from "react";
 import { DraftAnnotation } from "./Comments";
 import { stats } from "./lines";
+import * as nav from "./nav";
+import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
 import { basename, dirname, IconButton, Segmented, Tooltip } from "./ui";
 
-type Meta = { id: string };
+type Meta = { id: string } | { peek: true };
 
 /** Pierre draws lines inside a shadow root; find the row for one side + line number. */
 function revealLine(side: "additions" | "deletions", line: number) {
@@ -26,7 +28,11 @@ const DIFF_CSS = `
 [data-expand-button] { color: var(--ink-3); transition: color 100ms, background-color 100ms; }
 @media (hover: hover) { [data-expand-button]:hover { color: var(--ink); background-color: var(--hover-2); } }
 [data-gutter-utility-slot] button { background: var(--accent); color: white; border-radius: 6px; box-shadow: 0 1px 2px oklch(0 0 0 / 0.25); }
+[data-nit-link] { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 `;
+
+/** ⌘ (Ctrl elsewhere) held over a word underlines it, like an editor's go-to-definition link. */
+const linkKey = (e: MouseEvent) => e.metaKey || e.ctrlKey;
 
 const toPoint = (side: SelectedLineRange["side"], line: number) => ({ side: side ?? ("additions" as const), line });
 
@@ -64,19 +70,36 @@ export function DiffPane() {
         st.setSelection(toPoint(range.side, range.start), toPoint(range.endSide ?? range.side, range.end));
         st.startComment();
       },
+      onTokenEnter: (t: DiffTokenEventBaseProps, e: PointerEvent) => {
+        if (linkKey(e)) t.tokenElement.setAttribute("data-nit-link", "");
+      },
+      onTokenLeave: (t: DiffTokenEventBaseProps) => t.tokenElement.removeAttribute("data-nit-link"),
+      onTokenClick: (t: DiffTokenEventBaseProps, e: MouseEvent) => {
+        if (!linkKey(e)) return;
+        e.preventDefault();
+        st.set({ cursor: { side: t.side, line: t.lineNumber }, anchor: null });
+        void nav.lookup("definition", { col: t.lineCharStart });
+      },
     }),
     [style],
   );
 
-  const annotations = useMemo<DiffLineAnnotation<Meta>[]>(
-    () =>
-      file
-        ? drafts
-            .filter((d) => d.path === file.name)
-            .map((d) => ({ side: d.side, lineNumber: d.end, metadata: { id: d.id } }))
-        : [],
-    [drafts, file],
-  );
+  const peekAt = st.useStore((s) => s.peek?.at);
+  const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
+  const sidebar = st.useStore((s) => s.sidebar);
+
+  useEffect(() => {
+    if (file) nav.loadOutline(file);
+  }, [file]);
+
+  const annotations = useMemo<DiffLineAnnotation<Meta>[]>(() => {
+    if (!file) return [];
+    const list: DiffLineAnnotation<Meta>[] = drafts
+      .filter((d) => d.path === file.name)
+      .map((d) => ({ side: d.side, lineNumber: d.end, metadata: { id: d.id } }));
+    if (peekAt) list.push({ side: peekAt.side, lineNumber: peekAt.line, metadata: { peek: true } });
+    return list;
+  }, [drafts, file, peekAt]);
 
   const selected = useMemo<SelectedLineRange | null>(() => {
     if (!cursor) return null;
@@ -88,15 +111,28 @@ export function DiffPane() {
     if (cursor) revealLine(cursor.side, cursor.line);
   }, [cursor]);
 
-  const renderAnnotation = useCallback((a: DiffLineAnnotation<Meta>) => <DraftAnnotation id={a.metadata.id} />, []);
+  const renderAnnotation = useCallback(
+    (a: DiffLineAnnotation<Meta>) =>
+      "peek" in a.metadata ? <PeekAnnotation /> : <DraftAnnotation id={a.metadata.id} />,
+    [],
+  );
 
   if (!file) return null;
   const { add, del } = stats(file);
   const dirs = dirname(file.name).split("/").filter(Boolean);
+  // Which function or class the cursor is in, from the side it's on.
+  const scope = cursor
+    ? nav.enclosing(cursor.side === "additions" ? outline?.new : outline?.old, cursor.line).slice(-2)
+    : [];
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-page">
       <header className="flex h-12 shrink-0 items-center gap-3 px-4 shadow-[0_1px_0_var(--line)]">
+        {!sidebar ? (
+          <IconButton label="Show file list" keys="Mod+\\" onClick={() => st.set({ sidebar: true })}>
+            <SidebarExpand />
+          </IconButton>
+        ) : null}
         <nav aria-label="File path" className="flex min-w-0 items-center gap-1 text-[13px]">
           {file.prevName ? (
             <span className="truncate text-ink-3" title={`Renamed from ${file.prevName}`}>
@@ -110,6 +146,12 @@ export function DiffPane() {
             </span>
           ))}
           <span className="shrink-0 font-medium text-ink">{basename(file.name)}</span>
+          {scope.map((sym) => (
+            <span key={`${sym.line}:${sym.name}`} className="flex min-w-0 shrink items-center gap-1 text-ink-2">
+              <NavArrowRight width={12} height={12} className="shrink-0 text-ink-3" />
+              <span className="truncate font-mono text-[12px]">{sym.name}</span>
+            </span>
+          ))}
         </nav>
         <span className="flex h-[22px] shrink-0 items-center gap-1.5 rounded-chip bg-inset px-1.5 font-mono text-[11.5px] tabular-nums shadow-[inset_0_0_0_1px_var(--line)]">
           <span className="text-green">+{add}</span>

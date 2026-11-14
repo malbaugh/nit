@@ -1,11 +1,33 @@
 import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pierre/diffs";
 import { useSyncExternalStore } from "react";
-import type { Draft, FileContents, ReviewData, Side } from "../types";
+import type { Draft, FileContents, Location, ReviewData, Side, Symbol as Sym } from "../types";
 import { api } from "./api";
 import { type Row, rows } from "./lines";
 
 export type Point = { side: Side; line: number };
 export type Style = "split" | "unified";
+
+/** The inline panel under a line for definitions, references, or picking which word to look up. */
+export type Peek = {
+  at: Point;
+  path: string;
+  status: "loading" | "ready" | "error";
+  error?: string;
+} & (
+  | { kind: "pick"; mode: "definition" | "references"; identifiers: { name: string; col: number }[] }
+  | { kind: "definition"; name: string | null; results: Location[] }
+  | {
+      kind: "references";
+      name: string;
+      changed: Location[];
+      untouched: Location[];
+      text: Location[];
+      truncated: boolean;
+    }
+  | { kind: "symbol"; name: string; results: Location[] }
+);
+
+export type Outline = { new: Sym[] | null; old: Sym[] | null };
 
 type State = {
   data: ReviewData | null;
@@ -22,8 +44,20 @@ type State = {
   editing: string | null;
   focused: string | null;
   saving: Record<string, "saving" | "error">;
-  palette: "all" | "files" | null;
+  palette: "all" | "files" | "symbols" | null;
   toast: { message: string; undo?: () => void } | null;
+  peek: Peek | null;
+  /** Symbols per file path, from the server's tree-sitter parse. */
+  outlines: Record<string, Outline>;
+  outlineOpen: boolean;
+};
+
+const stored = (key: string) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 };
 
 const storedStyle = (): Style => {
@@ -50,6 +84,9 @@ let state: State = {
   saving: {},
   palette: null,
   toast: null,
+  peek: null,
+  outlines: {},
+  outlineOpen: stored("nit.outline") !== "0",
 };
 
 const listeners = new Set<() => void>();
@@ -138,6 +175,7 @@ export async function load() {
         current,
         drafts,
         viewed: new Set(data.viewed),
+        outlines: {}, // files may have changed; symbols are re-read on demand
         error: null,
       };
     });

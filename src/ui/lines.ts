@@ -1,7 +1,8 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { Side } from "../types";
 
-export type Row = { side: Side; line: number; changeStart: boolean };
+/** A line the cursor can stop on. `changed` is false for unchanged context lines. */
+export type Row = { side: Side; line: number; changeStart: boolean; changed: boolean };
 
 /** Every line the cursor can stop on, in reading order: context and additions by new line, deletions by old line. */
 export function rows(file: FileDiffMetadata): Row[] {
@@ -11,20 +12,26 @@ export function rows(file: FileDiffMetadata): Row[] {
     let newLine = hunk.additionStart;
     for (const part of hunk.hunkContent) {
       if (part.type === "context") {
-        for (let i = 0; i < part.lines; i++) out.push({ side: "additions", line: newLine++, changeStart: false });
+        for (let i = 0; i < part.lines; i++)
+          out.push({ side: "additions", line: newLine++, changeStart: false, changed: false });
         oldLine += part.lines;
         continue;
       }
-      for (let i = 0; i < part.deletions; i++) out.push({ side: "deletions", line: oldLine++, changeStart: i === 0 });
+      for (let i = 0; i < part.deletions; i++)
+        out.push({ side: "deletions", line: oldLine++, changeStart: i === 0, changed: true });
       for (let i = 0; i < part.additions; i++)
-        out.push({
-          side: "additions",
-          line: newLine++,
-          changeStart: i === 0 && part.deletions === 0,
-        });
+        out.push({ side: "additions", line: newLine++, changeStart: i === 0 && part.deletions === 0, changed: true });
     }
   }
   return out;
+}
+
+/** Line numbers changed on each side of a file: added lines (new) and removed lines (old). */
+export function changedLines(file: FileDiffMetadata) {
+  const added = new Set<number>();
+  const removed = new Set<number>();
+  for (const r of rows(file)) if (r.changed) (r.side === "additions" ? added : removed).add(r.line);
+  return { added, removed };
 }
 
 export function stats(file: FileDiffMetadata) {
@@ -36,12 +43,3 @@ export function stats(file: FileDiffMetadata) {
   }
   return { add, del };
 }
-
-export const statusLetter = (file: FileDiffMetadata) =>
-  ({
-    change: "M",
-    new: "A",
-    deleted: "D",
-    "rename-pure": "R",
-    "rename-changed": "R",
-  })[file.type] ?? "M";

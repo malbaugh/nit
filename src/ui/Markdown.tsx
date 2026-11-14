@@ -1,45 +1,7 @@
-import { getFiletypeFromFileName, getSharedHighlighter, type SupportedLanguages } from "@pierre/diffs";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-const THEMES = { dark: "pierre-dark", light: "pierre-light" } as const;
-const cache = new Map<string, Promise<string | null>>();
-
-/** Highlights with the same Shiki themes as the diff; unknown languages fall back to plain text. */
-function highlight(source: string, lang: string) {
-  const key = `${lang}\u0000${source}`;
-  let p = cache.get(key);
-  if (!p) {
-    p = getSharedHighlighter({ themes: [THEMES.dark, THEMES.light], langs: [lang as SupportedLanguages] })
-      .then((h) => h.codeToHtml(source, { lang, themes: THEMES, defaultColor: false }))
-      .catch((e: unknown) => {
-        console.warn(`nit: could not highlight ${lang}`, e);
-        return null;
-      });
-    cache.set(key, p);
-  }
-  return p;
-}
-
-function CodeBlock({ source, lang }: { source: string; lang: string }) {
-  const [html, setHtml] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    if (lang) highlight(source, lang).then((h) => alive && setHtml(h));
-    return () => {
-      alive = false;
-    };
-  }, [source, lang]);
-  // Shiki escapes the source, so its HTML is safe to insert.
-  // biome-ignore lint/security/noDangerouslySetInnerHtml: Shiki output, source is escaped
-  if (html) return <div dangerouslySetInnerHTML={{ __html: html }} />;
-  return (
-    <pre>
-      <code>{source}</code>
-    </pre>
-  );
-}
+import { CodeBlock, langFor } from "./Code";
 
 function SuggestionBlock({ source }: { source: string }) {
   return (
@@ -76,7 +38,7 @@ export const Markdown = memo(function Markdown({
   /** The commented file: a code block without a language is highlighted as this file's language. */
   path?: string;
 }) {
-  const fallbackLang = path ? (getFiletypeFromFileName(path) ?? "") : "";
+  const fallbackLang = path ? langFor(path) : "";
   const taskIndex = useRef(0);
   taskIndex.current = 0;
 

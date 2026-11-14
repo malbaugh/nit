@@ -59,7 +59,11 @@ Two regions only.
 - **Diff.** One file at a time, with a sticky header: path, `+n −n`, and a
   Viewed toggle. Everything else lives in `⌘K`.
 
-No top bar, status bar, right panel or tabs.
+No top bar, status bar or tabs. One exception to "two regions": the
+**outline** (`⇧O`), a right-hand panel of the file's symbols. Code structure
+is too important in review to hide behind a key. Dots mark symbols the diff
+added (green) or changed (amber); removed symbols are listed at the bottom.
+It remembers whether you closed it.
 
 ## What appears, and when
 

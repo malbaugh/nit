@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildUI, uiDir } from "./build";
 import * as git from "./git";
+import { createNavigator } from "./navigate";
 import { openStore } from "./store";
-import type { Draft, FileContents, ReviewData } from "./types";
+import type { Draft, FileContents, ReviewData, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
 
@@ -23,6 +24,15 @@ const branch = await git.currentBranch(root);
 const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
 // A stable port per repo keeps the tab's address (and its local backups) across restarts.
+// The diff is read by the page and by navigation; reuse one read for a couple of seconds.
+let patchCache: { at: number; text: Promise<string> } | null = null;
+function patch() {
+  if (!patchCache || Date.now() - patchCache.at > 2000)
+    patchCache = { at: Date.now(), text: git.diff(root, mergeBase) };
+  return patchCache.text;
+}
+const nav = await createNavigator(root, mergeBase, patch);
+
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
 
 if (dev || !existsSync(join(uiDir, "index.html"))) await buildUI();
@@ -57,6 +67,17 @@ function validPath(path: string) {
   } catch {
     return false;
   }
+}
+
+const validName = (name: string) => /^[\p{L}\p{N}_$]{1,200}$/u.test(name);
+
+function position(q: URLSearchParams): { path: string; side: Side; line: number } | null {
+  const path = q.get("path") ?? "";
+  const side = q.get("side");
+  const line = Number(q.get("line"));
+  if (!validPath(path) || (side !== "additions" && side !== "deletions") || !Number.isInteger(line) || line < 1)
+    return null;
+  return { path, side, line };
 }
 
 function parseDraft(v: unknown): Draft | null {
@@ -116,7 +137,7 @@ const serve = (p: number) =>
             branch,
             base,
             mergeBase,
-            patch: await git.diff(root, mergeBase),
+            patch: await patch(),
             drafts: store.drafts(),
             viewed: store.viewed(),
           };
@@ -157,6 +178,44 @@ const serve = (p: number) =>
         POST: guarded(async (req) => {
           const d = store.draft(req.params.id);
           return d ? applySuggestion(d) : fail(404, "draft not found");
+        }),
+      },
+      "/api/symbols": {
+        GET: guarded(async (req) => {
+          const q = new URL(req.url).searchParams;
+          const path = q.get("path") ?? "";
+          if (!validPath(path)) return fail(400, "invalid path");
+          const prev = q.get("prev");
+          return json(await nav.symbols(path, prev && validPath(prev) ? prev : null));
+        }),
+      },
+      "/api/identifiers": {
+        GET: guarded(async (req) => {
+          const q = new URL(req.url).searchParams;
+          const at = position(q);
+          if (!at) return fail(400, "invalid position");
+          return json(await nav.identifiers(at.path, at.side, at.line));
+        }),
+      },
+      "/api/definition": {
+        GET: guarded(async (req) => {
+          const q = new URL(req.url).searchParams;
+          const at = position(q);
+          if (!at) return fail(400, "invalid position");
+          // A name, or a column to read the identifier from (⌘-click on a token).
+          const col = Number(q.get("col"));
+          const name =
+            q.get("name") ??
+            (Number.isInteger(col) && col >= 0 ? await nav.identifierAt(at.path, at.side, at.line, col) : null);
+          if (!name || !validName(name)) return json({ name: null, results: [] });
+          return json({ name, results: await nav.definition(name, at) });
+        }),
+      },
+      "/api/references": {
+        GET: guarded(async (req) => {
+          const name = new URL(req.url).searchParams.get("name") ?? "";
+          if (!validName(name)) return fail(400, "invalid name");
+          return json({ name, ...(await nav.references(name)) });
         }),
       },
       "/api/viewed": {

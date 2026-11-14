@@ -1,7 +1,8 @@
-import { Page, Search } from "iconoir-react/regular";
+import { CodeBracketsSquare, Page, Search } from "iconoir-react/regular";
 import { type ReactNode, useDeferredValue, useMemo, useRef, useState } from "react";
 import { actions } from "./actions";
 import { stats } from "./lines";
+import * as nav from "./nav";
 import * as st from "./state";
 import { basename, dirname, Kbd } from "./ui";
 
@@ -39,9 +40,15 @@ export function Palette() {
   return <PaletteWindow mode={mode} />;
 }
 
-function PaletteWindow({ mode }: { mode: "all" | "files" }) {
+function PaletteWindow({ mode: opened }: { mode: "all" | "files" | "symbols" }) {
   const files = st.useStore((s) => s.files);
-  const [query, setQuery] = useState("");
+  const outline = st.useStore((s) => {
+    const f = st.currentFile(s);
+    return f ? s.outlines[f.name] : undefined;
+  });
+  const [query, setQuery] = useState(opened === "symbols" ? "@" : "");
+  // Typing @ switches to the current file's symbols, as in editors.
+  const mode = query.startsWith("@") ? "symbols" : opened === "symbols" ? "all" : opened;
   const deferred = useDeferredValue(query);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -67,15 +74,35 @@ function PaletteWindow({ mode }: { mode: "all" | "files" }) {
     const actionItems: Item[] = actions
       .filter((a) => !a.hidden && a.id !== "files" && (!a.when || a.when()))
       .map((a) => ({ id: a.id, group: a.group, label: a.label, keys: a.keys, icon: a.icon, run: a.run }));
-    const pool = mode === "files" ? fileItems : deferred ? [...actionItems, ...fileItems] : actionItems;
-    if (!deferred) return pool;
+    const symbolItems: Item[] = (outline?.new ?? []).map((sym) => ({
+      id: `sym:${sym.line}:${sym.name}`,
+      group: "Symbols",
+      label: sym.name,
+      hint: sym.kind,
+      icon: <CodeBracketsSquare />,
+      meta: <span className="font-mono text-[11px] text-ink-3">:{sym.line}</span>,
+      run: () => void nav.revealSymbol(sym, "additions"),
+    }));
+    const needle = mode === "symbols" ? deferred.slice(1) : deferred;
+    const pool =
+      mode === "symbols"
+        ? symbolItems
+        : mode === "files"
+          ? fileItems
+          : deferred
+            ? [...actionItems, ...fileItems]
+            : actionItems;
+    if (!needle) return pool;
     return pool
-      .map((it) => ({ it, s: score(deferred, it.hint ? `${it.hint}/${it.label}` : it.label) }))
+      .map((it) => ({
+        it,
+        s: score(needle, mode === "symbols" ? it.label : it.hint ? `${it.hint}/${it.label}` : it.label),
+      }))
       .filter((x): x is { it: Item; s: number } => x.s !== null)
       .sort((a, b) => a.s - b.s)
       .slice(0, 60)
       .map((x) => x.it);
-  }, [mode, files, deferred]);
+  }, [mode, files, deferred, outline]);
 
   const close = () => st.set({ palette: null });
   const run = (it: Item | undefined) => {
@@ -91,7 +118,7 @@ function PaletteWindow({ mode }: { mode: "all" | "files" }) {
   };
 
   // Group headers only when not searching; search results are one ranked list.
-  const grouped = !deferred;
+  const grouped = !deferred || mode === "symbols";
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click closes; Esc does the same from the keyboard
@@ -127,7 +154,13 @@ function PaletteWindow({ mode }: { mode: "all" | "files" }) {
               else return;
               e.preventDefault();
             }}
-            placeholder={mode === "files" ? "Search changed files…" : "Search files and actions…"}
+            placeholder={
+              mode === "symbols"
+                ? "Go to symbol in this file…"
+                : mode === "files"
+                  ? "Search changed files…"
+                  : "Search files and actions… (@ for symbols)"
+            }
             className="h-full min-w-0 flex-1 bg-transparent text-[14.5px] text-ink outline-none placeholder:text-ink-3"
           />
           <Kbd k="Esc" quiet />
@@ -189,7 +222,9 @@ function PaletteWindow({ mode }: { mode: "all" | "files" }) {
           <span className="flex items-center gap-1.5">
             <Kbd k="Enter" quiet /> Open
           </span>
-          <span className="ml-auto">{mode === "files" ? "Changed files" : "Type to search files too"}</span>
+          <span className="ml-auto">
+            {mode === "symbols" ? "Symbols in this file" : mode === "files" ? "Changed files" : "Type @ for symbols"}
+          </span>
         </div>
       </div>
     </div>

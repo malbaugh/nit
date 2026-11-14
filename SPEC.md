@@ -56,8 +56,22 @@ Find references: fff `usage_only` with whole-word matches, checked by tree-sitte
 grouped as **changed in this diff** and **not touched**. The untouched group answers
 "did they update every caller?".
 
-Known limits: import aliases (`~/`, `@scope/*`) need tsconfig `paths` and workspace
-resolution. `obj.method()` with an unknown type is matched by name and marked
+As built: grammars are VS Code's prebuilt WASM set (TypeScript, TSX, JavaScript,
+Python, Go, Rust, Java, C#, Ruby, PHP, C++). Each grammar's own `tags.scm` is
+vendored in `src/queries`, plus nit's additions for TypeScript type aliases and
+enums, and top-level constants. A test compiles every query. Definitions are
+found by name: fff picks candidate files, tree-sitter confirms. References are
+checked by tree-sitter too; matches in files without a grammar are listed apart
+as text matches. `node_modules` isn't indexed.
+
+In JavaScript and TypeScript, go to definition follows imports first: Bun's
+resolver handles relative paths, tsconfig `paths`, workspace packages and
+`package.json` `exports`. nit then follows barrels, `export *`, renamed and
+default exports, and `import * as ns` members to the one declaration.
+Dependencies resolve to their `.d.ts`. Only names that aren't imported fall back
+to the repo-wide name search.
+
+Known limits: `obj.method()` with an unknown type is matched by name and marked
 approximate. A language server (definition, references, hover only) is a later,
 optional addition.
 
@@ -210,5 +224,8 @@ Three phases. Each ends in something you can use every day.
    resolve), `nit <pr>` with config and the `checkout` and `editor` plug
    points, and Apply with the Agent SDK (snapshots, undo, changes since last
    review).
-3. **Navigate.** Go to definition and find references with fff and
-   tree-sitter, shown as an inline peek.
+3. **Navigate.** **(built, ahead of phase 2)** Go to definition (`g d`,
+   ⌘-click) and find references (`g r`) with fff and tree-sitter, shown as an
+   inline peek. An outline panel (`⇧O`) marks symbols the diff added, changed
+   or removed. `@` in the palette jumps to a symbol, the header shows which
+   function the cursor is in, and `⌘[` goes back.

@@ -1,20 +1,26 @@
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   ChatLines,
   ChatPlusIn,
   CheckCircle,
+  CodeBracketsSquare,
   EditPencil,
+  List,
   NavArrowDown,
   NavArrowUp,
   Page,
   Refresh,
+  Search,
   SidebarCollapse,
+  SidebarExpand,
   Trash,
   Undo,
   ViewColumns2,
 } from "iconoir-react/regular";
 import type { ReactNode } from "react";
+import * as nav from "./nav";
 import * as st from "./state";
 
 export type Action = {
@@ -197,6 +203,46 @@ export const actions: Action[] = [
     run: () => st.set((s) => ({ sidebar: !s.sidebar })),
   },
   { id: "reload", group: "View", label: "Reload changes", keys: ["r"], icon: <Refresh />, run: () => void st.load() },
+  {
+    id: "outline",
+    group: "View",
+    label: "Toggle outline",
+    keys: ["O"],
+    icon: <SidebarExpand />,
+    run: () => {
+      const open = !st.get().outlineOpen;
+      st.set({ outlineOpen: open });
+      try {
+        localStorage.setItem("nit.outline", open ? "1" : "0");
+      } catch {}
+    },
+  },
+
+  {
+    id: "definition",
+    group: "Navigate",
+    label: "Go to definition",
+    keys: ["g d"],
+    icon: <CodeBracketsSquare />,
+    run: () => void nav.lookup("definition"),
+  },
+  {
+    id: "references",
+    group: "Navigate",
+    label: "Find references",
+    keys: ["g r"],
+    icon: <Search />,
+    run: () => void nav.lookup("references"),
+  },
+  {
+    id: "symbols",
+    group: "Navigate",
+    label: "Go to symbol in file",
+    keys: ["@"],
+    icon: <List />,
+    run: () => st.set({ palette: "symbols" }),
+  },
+  { id: "back", group: "Navigate", label: "Go back", keys: ["Mod+["], icon: <ArrowLeft />, run: nav.goBack },
 ];
 
 const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
@@ -220,8 +266,10 @@ export function keyLabel(k: string) {
     .replace("ArrowDown", "↓")
     .replace("ArrowUp", "↑")
     .replace("Backspace", "⌫")
-    .replace(/^C$/, "⇧C");
+    .replace(/^([A-Z])$/, "⇧$1");
 }
+
+let pendingG = 0;
 
 export function handleKey(e: KeyboardEvent) {
   const s = st.get();
@@ -239,7 +287,20 @@ export function handleKey(e: KeyboardEvent) {
   // letters typed before it takes focus must not trigger actions.
   if (s.palette || typing || s.editing) return;
   if (e.key === "Escape") {
-    if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
+    if (s.peek) nav.closePeek();
+    else if (s.anchor || s.focused) st.set({ anchor: null, focused: null });
+    return;
+  }
+  // Two-key sequences: g then d or r, within a second.
+  if (pendingG && performance.now() - pendingG < 1000 && (name === "d" || name === "r")) {
+    pendingG = 0;
+    e.preventDefault();
+    void nav.lookup(name === "d" ? "definition" : "references");
+    return;
+  }
+  pendingG = name === "g" ? performance.now() : 0;
+  if (name === "g") {
+    e.preventDefault();
     return;
   }
   if (e.key === "?") {
