@@ -51,7 +51,7 @@ export type Peek = {
 
 export type Outline = { new: Sym[] | null; old: Sym[] | null };
 
-type State = {
+export type State = {
   data: ReviewData | null;
   error: string | null;
   files: FileDiffMetadata[];
@@ -74,7 +74,9 @@ type State = {
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
   settingsOpen: boolean;
+  /** The search screen replaces the diff; its query lives in the URL (?search=…). */
   searchOpen: boolean;
+  search: { query: string; regex: boolean; caseSensitive: boolean };
   browse: Browse | null;
   /** The agent's current or last pass (agent.ts on the server), its live activity, the panel. */
   agent: AgentRun | null;
@@ -127,6 +129,7 @@ let state: State = {
   reviewOpen: false,
   settingsOpen: false,
   searchOpen: false,
+  search: { query: "", regex: false, caseSensitive: false },
   browse: null,
   agent: null,
   agentActivity: [],
@@ -287,6 +290,7 @@ function unfoldForDrafts(index: number) {
 
 export function openFile(index: number) {
   if (index < 0 || index >= state.files.length) return;
+  if (state.searchOpen) set({ searchOpen: false });
   if (index === state.current) {
     if (state.browse) set({ browse: null, peek: null }); // back to the review's copy of the file
     return;

@@ -255,16 +255,21 @@ export async function createNavigator(root: string, mergeBase: string, patch: ()
         pageSize: 200,
         maxMatchesPerFile: 100,
         timeBudgetMs: 1500,
+        beforeContext: 2,
+        afterContext: 2,
       });
       if (!r.ok) return { matches: [], truncated: false, next: null };
       const matches = r.value.items
         .filter((m) => !m.isBinary)
         .map((m) => {
           const text = m.lineContent.slice(0, 400);
+          const cut = (lines: string[] | undefined) => (lines ?? []).map((l) => l.slice(0, 400));
           return {
             path: m.relativePath,
             line: m.lineNumber,
             text,
+            before: cut(m.contextBefore),
+            after: cut(m.contextAfter),
             ranges: m.matchRanges
               .map(([a, b]) => [charCol(m.lineContent, a), charCol(m.lineContent, b)] as [number, number])
               .filter(([a]) => a < text.length),

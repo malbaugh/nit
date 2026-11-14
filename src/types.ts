@@ -118,7 +118,15 @@ export type PostResult = {
 };
 
 /** One line matching a repo-wide search. Columns and ranges count UTF-16 units. */
-export type SearchMatch = { path: string; line: number; text: string; ranges: [number, number][] };
+export type SearchMatch = {
+  path: string;
+  line: number;
+  text: string;
+  ranges: [number, number][];
+  /** Up to two lines either side, for the excerpt the match is shown in. */
+  before: string[];
+  after: string[];
+};
 export type SearchResult = {
   matches: SearchMatch[];
   /** More files are left to search; pass `next` back for the next page. */

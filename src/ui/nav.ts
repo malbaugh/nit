@@ -7,15 +7,20 @@ import * as st from "./state";
 // ---------- where you are lives in the URL; browser history is the back stack (⌘[)
 
 // ?file=a/b.ts&line=42 (&side=old for a removed line, &whole for the full file), or
-// ?open=c/d.ts&line=7 for a file outside the review. Other parameters (?debug) are kept.
-const KEYS = ["file", "open", "line", "side", "whole"];
+// ?open=c/d.ts&line=7 for a file outside the review, ?search=text(&regex&case) for the search
+// screen. Other parameters (?debug) are kept.
+const KEYS = ["file", "open", "line", "side", "whole", "search", "regex", "case"];
 
 function placeUrl() {
-  const { browse, cursor, fullFiles } = st.get();
+  const { browse, cursor, fullFiles, searchOpen, search: find } = st.get();
   const f = st.currentFile();
   const q = new URLSearchParams(location.search);
   for (const k of KEYS) q.delete(k);
-  if (browse) {
+  if (searchOpen) {
+    q.set("search", find.query);
+    if (find.regex) q.set("regex", "");
+    if (find.caseSensitive) q.set("case", "");
+  } else if (browse) {
     q.set("open", browse.path);
     q.set("line", String(browse.line));
   } else if (f) {
@@ -59,6 +64,19 @@ export function goBack() {
   else if (st.get().browse) st.set({ browse: null, peek: null });
 }
 
+/** The search screen is a place too: Back from a result you opened returns to it. */
+export function openSearch() {
+  if (st.get().searchOpen) return;
+  remember();
+  st.set({ searchOpen: true, palette: null, peek: null });
+}
+
+export function closeSearch() {
+  if (!st.get().searchOpen) return;
+  if (((history.state as { depth?: number } | null)?.depth ?? 0) > 0) history.back();
+  else st.set({ searchOpen: false });
+}
+
 /** Puts you where the URL says: on load, and on Back/Forward. */
 export async function applyUrl() {
   const q = new URLSearchParams(location.search);
@@ -67,6 +85,14 @@ export async function applyUrl() {
   const file = q.get("file");
   applying = true;
   try {
+    if (q.has("search")) {
+      st.set({
+        searchOpen: true,
+        search: { query: q.get("search") ?? "", regex: q.has("regex"), caseSensitive: q.has("case") },
+      });
+      return;
+    }
+    if (st.get().searchOpen) st.set({ searchOpen: false });
     if (open) {
       st.set({ browse: { path: open, line: line || 1, lines: 0 }, peek: null, anchor: null, focused: null });
       return;
@@ -199,7 +225,13 @@ export function openLocation(loc: { path: string; line: number }) {
   const index = st.get().files.findIndex((f) => f.name === loc.path);
   if (index !== -1) return void goToLine(index, "additions", loc.line);
   remember();
-  st.set({ browse: { path: loc.path, line: loc.line, lines: 0 }, peek: null, anchor: null, focused: null });
+  st.set({
+    browse: { path: loc.path, line: loc.line, lines: 0 },
+    peek: null,
+    anchor: null,
+    focused: null,
+    searchOpen: false,
+  });
 }
 
 /** Outline click: go to the symbol in the code, unfolding the file if it's outside the changes. */

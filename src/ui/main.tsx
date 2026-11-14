@@ -16,7 +16,7 @@ import { OutlinePanel } from "./Outline";
 import { Palette } from "./Palette";
 import { HighlightPool } from "./pool";
 import { ReviewSheet } from "./ReviewSheet";
-import { SearchWindow } from "./Search";
+import { SearchPane } from "./Search";
 import * as st from "./state";
 import { createEditor } from "./suggest";
 import { theme } from "./theme";
@@ -63,6 +63,7 @@ function App() {
   const outlineOpen = st.useStore((s) => s.outlineOpen);
   const browsing = st.useStore((s) => s.browse !== null);
   const view = st.useStore((s) => s.view);
+  const searching = st.useStore((s) => s.searchOpen);
 
   useEffect(() => {
     // The URL says where you were: a reload or a shared link opens there.
@@ -111,10 +112,9 @@ function App() {
   return (
     <div className="flex h-full">
       {sidebar ? <FileList /> : null}
-      {browsing ? <FilePane /> : view === "agent" ? <ChangesPane /> : <DiffPane />}
-      {outlineOpen ? <OutlinePanel /> : null}
+      {searching ? <SearchPane /> : browsing ? <FilePane /> : view === "agent" ? <ChangesPane /> : <DiffPane />}
+      {outlineOpen && !searching ? <OutlinePanel /> : null}
       <Palette />
-      <SearchWindow />
       <AgentPanel />
       <ReviewSheet />
     </div>

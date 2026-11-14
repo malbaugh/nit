@@ -213,7 +213,7 @@ export const actions: Action[] = [
     label: "Search the repo",
     keys: ["Mod+Shift+f"],
     icon: <DocMagnifyingGlass />,
-    run: () => st.set({ searchOpen: true, palette: null }),
+    run: nav.openSearch,
   },
   {
     id: "settings",
@@ -455,7 +455,8 @@ export function handleKey(e: KeyboardEvent) {
   // Search opens from anywhere but a composer, even from the palette.
   if (name === "Mod+Shift+f" && !s.editing) {
     e.preventDefault();
-    st.set({ searchOpen: !s.searchOpen, palette: null });
+    if (s.searchOpen) nav.closeSearch();
+    else nav.openSearch();
     return;
   }
   // An open composer closes on Esc even after focus has left it (an empty one disappears).

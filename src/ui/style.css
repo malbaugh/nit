@@ -187,6 +187,15 @@ pre[style*="--hls-dark"] span {
   color: var(--ink);
 }
 
+/* Search matches over syntax colours: every hit tinted, the current one solid. */
+::highlight(nit-search) {
+  background-color: color-mix(in oklch, var(--orange) 26%, transparent);
+}
+::highlight(nit-search-current) {
+  background-color: var(--orange);
+  color: var(--page);
+}
+
 /* Numbered code (definition and symbol snippets). */
 .code-numbered .line::before {
   counter-increment: line;
