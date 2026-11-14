@@ -23,7 +23,7 @@ import { Button, IconButton, Kbd } from "./ui";
 
 // The Markdown parser is the heaviest piece of the UI; load it after the diff has painted.
 const LazyMarkdown = lazy(() => import("./Markdown").then((m) => ({ default: m.Markdown })));
-function Markdown(props: { source: string; path?: string; onToggleTask?: (index: number) => void }) {
+export function Markdown(props: { source: string; path?: string; onToggleTask?: (index: number) => void }) {
   return (
     <Suspense fallback={<p className="md whitespace-pre-wrap">{props.source}</p>}>
       <LazyMarkdown {...props} />
@@ -50,10 +50,10 @@ const labelTone: Record<string, string> = {
 };
 
 const where = (d: Draft) =>
-  d.start === 0 ? "File" : d.start === d.end ? `Line ${d.end}` : `Lines ${d.start}–${d.end}`;
+  d.replyTo ? "Reply" : d.start === 0 ? "File" : d.start === d.end ? `Line ${d.end}` : `Lines ${d.start}–${d.end}`;
 
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "narrow" });
-function ago(ms: number) {
+export function ago(ms: number) {
   const s = Math.round((ms - Date.now()) / 1000);
   if (s > -45) return "just now";
   if (s > -3600) return rtf.format(Math.round(s / 60), "minute");
@@ -62,15 +62,20 @@ function ago(ms: number) {
 }
 
 export function DraftAnnotation({ id }: { id: string }) {
+  return (
+    <div className="px-3 py-1.5 font-sans">
+      <DraftView id={id} />
+    </div>
+  );
+}
+
+/** A draft as its composer (while editing) or its card. Also used inside thread cards for replies. */
+export function DraftView({ id }: { id: string }) {
   const draft = st.useStore((s) => s.drafts.find((d) => d.id === id));
   const editing = st.useStore((s) => s.editing === id);
   const focused = st.useStore((s) => s.focused === id);
   if (!draft) return null;
-  return (
-    <div className="px-3 py-1.5 font-sans">
-      {editing ? <Composer draft={draft} /> : <Card draft={draft} focused={focused} />}
-    </div>
-  );
+  return editing ? <Composer draft={draft} /> : <Card draft={draft} focused={focused} />;
 }
 
 function useAutoGrow(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {

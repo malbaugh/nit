@@ -1,4 +1,14 @@
-import type { Draft, FileContents, Location, ReviewData, Side, Symbol as Sym } from "../types";
+import type {
+  Draft,
+  FileContents,
+  GitHubState,
+  Location,
+  PostResult,
+  ReviewData,
+  ReviewEvent,
+  Side,
+  Symbol as Sym,
+} from "../types";
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -28,6 +38,11 @@ export const api = {
   deleteDraft: (id: string) => call("DELETE", `/api/drafts/${id}`, {}),
   applySuggestion: (id: string) => call("POST", `/api/drafts/${id}/apply`, {}),
   setViewed: (path: string, viewed: boolean) => call("POST", "/api/viewed", { path, viewed }),
+
+  github: (fresh = false) => call<GitHubState>("GET", `/api/github${fresh ? "?fresh=1" : ""}`),
+  postReview: (event: ReviewEvent, summary: string) =>
+    call<PostResult>("POST", "/api/github/review", { event, summary }),
+  resolveThread: (id: string, resolved: boolean) => call("POST", `/api/github/threads/${id}/resolve`, { resolved }),
 
   symbols: (path: string, prev?: string) =>
     call<{ new: Sym[] | null; old: Sym[] | null }>("GET", `/api/symbols?${q({ path, prev })}`),

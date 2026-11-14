@@ -37,6 +37,10 @@ export type Action = {
 };
 
 const focusedDraft = () => st.get().drafts.find((d) => d.id === st.get().focused);
+const focusedThread = () => {
+  const gh = st.get().github;
+  return gh?.status === "ready" ? gh.threads.find((t) => t.id === st.get().focused) : undefined;
+};
 
 /** One list for the keyboard and the palette: every action has a key, every key is discoverable. */
 export const actions: Action[] = [
@@ -114,6 +118,27 @@ export const actions: Action[] = [
     keys: ["Mod+Shift+Enter"],
     icon: <ChatLines />,
     run: () => st.set((s) => ({ reviewOpen: !s.reviewOpen })),
+  },
+  {
+    id: "reply",
+    group: "Review",
+    label: "Reply to thread",
+    keys: ["r"],
+    icon: <ChatLines />,
+    when: () => !!focusedThread(),
+    run: () => st.replyTo(focusedThread()!.id),
+  },
+  {
+    id: "resolve",
+    group: "Review",
+    label: "Resolve or reopen thread",
+    keys: ["x"],
+    icon: <CheckCircle />,
+    when: () => !!focusedThread(),
+    run: () => {
+      const t = focusedThread()!;
+      void st.setThreadResolved(t.id, !t.resolved);
+    },
   },
   { id: "undo", group: "Review", label: "Undo", keys: ["Mod+z"], icon: <Undo />, when: st.canUndo, run: st.undo },
 
@@ -322,8 +347,11 @@ export function handleKey(e: KeyboardEvent) {
     st.set({ palette: "all" });
     return;
   }
-  const action = actions.find((a) => a.keys.includes(name) || (name === "Delete" && a.keys.includes("Backspace")));
-  if (!action || (action.when && !action.when())) return;
+  // The first action for this key that applies right now (r replies on a thread, else reloads).
+  const action = actions.find(
+    (a) => (a.keys.includes(name) || (name === "Delete" && a.keys.includes("Backspace"))) && (!a.when || a.when()),
+  );
+  if (!action) return;
   e.preventDefault();
   action.run();
 }

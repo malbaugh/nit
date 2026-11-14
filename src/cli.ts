@@ -2,24 +2,32 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildUI, uiDir } from "./build";
+import { checkoutPr, parsePrArg } from "./checkout";
 import * as git from "./git";
+import { createGitHub } from "./github";
 import { createNavigator } from "./navigate";
 import { openStore } from "./store";
-import type { Draft, FileContents, ReviewData, Side } from "./types";
+import type { Draft, FileContents, ReviewData, ReviewEvent, Side } from "./types";
 
 const dev = process.env.NIT_DEV === "1";
 
-const root = await git.repoRoot();
-if (!root) {
-  console.error("nit: not inside a git repository");
+const fail0 = (msg: string): never => {
+  console.error(`nit: ${msg}`);
   process.exit(1);
-}
-const base = process.argv[2] ?? (await git.defaultBase(root));
+};
+
+const here = (await git.repoRoot()) || fail0("not inside a git repository");
+// `nit 2227`, `nit #2227` or `nit <pr-url>` reviews a pull request in its own worktree.
+const arg = process.argv[2];
+const prRef = parsePrArg(arg);
+const opened = prRef
+  ? await checkoutPr(here, prRef).catch((e: unknown) => fail0(e instanceof Error ? e.message : String(e)))
+  : null;
+const root = opened?.path ?? here;
+const base = opened?.base ?? arg ?? (await git.defaultBase(root));
+const forcedPr = opened?.number ?? (Number(process.env.NIT_PR) || null);
 const mergeBase = await git.mergeBase(root, base);
-if (!mergeBase) {
-  console.error(`nit: no merge base between ${base} and HEAD`);
-  process.exit(1);
-}
+if (!mergeBase) fail0(`no merge base between ${base} and HEAD. Fetch it first (git fetch origin), or pass a branch.`);
 const branch = await git.currentBranch(root);
 const project = await git.projectId(root);
 const store = openStore(`${project}:${branch}`);
@@ -32,6 +40,8 @@ function patch() {
   return patchCache.text;
 }
 const nav = await createNavigator(root, mergeBase, patch);
+const github = createGitHub(root, branch, forcedPr);
+github.warm(); // sign in, find the PR and load its threads while the page loads
 
 const preferredPort = Number(process.env.NIT_PORT ?? 40000 + (Number.parseInt(project.slice(0, 4), 16) % 10000));
 
@@ -95,7 +105,8 @@ function parseDraft(v: unknown): Draft | null {
     typeof d.body === "string" &&
     (d.suggestion === null || typeof d.suggestion === "string") &&
     Array.isArray(d.anchor) &&
-    d.anchor.every((l) => typeof l === "string");
+    d.anchor.every((l) => typeof l === "string") &&
+    (d.replyTo == null || (typeof d.replyTo === "string" && /^[\w=-]{1,200}$/.test(d.replyTo)));
   if (!ok) return null;
   const now = Date.now();
   return {
@@ -216,6 +227,46 @@ const serve = (p: number) =>
           const name = new URL(req.url).searchParams.get("name") ?? "";
           if (!validName(name)) return fail(400, "invalid name");
           return json({ name, ...(await nav.references(name)) });
+        }),
+      },
+      "/api/github": {
+        GET: guarded(async (req) => json(await github.state(new URL(req.url).searchParams.has("fresh")))),
+      },
+      "/api/github/review": {
+        POST: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as {
+            event?: unknown;
+            summary?: unknown;
+            ids?: unknown;
+          } | null;
+          const events: ReviewEvent[] = ["COMMENT", "APPROVE", "REQUEST_CHANGES"];
+          if (!body || !events.includes(body.event as ReviewEvent)) return fail(400, "invalid review");
+          const ids = Array.isArray(body.ids)
+            ? new Set(body.ids.filter((i): i is string => typeof i === "string"))
+            : null;
+          const drafts = store
+            .drafts()
+            .filter((d) => (d.body.trim() || d.suggestion !== null) && (!ids || ids.has(d.id)));
+          try {
+            const result = await github.postReview(drafts, body.event as ReviewEvent, String(body.summary ?? ""));
+            for (const id of result.posted) store.deleteDraft(id);
+            return json(result);
+          } catch (e) {
+            return fail(502, e instanceof Error ? e.message : String(e));
+          }
+        }),
+      },
+      "/api/github/threads/:id/resolve": {
+        POST: guarded(async (req) => {
+          const body = (await req.json().catch(() => null)) as { resolved?: unknown } | null;
+          if (typeof body?.resolved !== "boolean" || !/^[\w=-]{1,200}$/.test(req.params.id))
+            return fail(400, "invalid request");
+          try {
+            await github.setResolved(req.params.id, body.resolved);
+            return json({ ok: true });
+          } catch (e) {
+            return fail(502, e instanceof Error ? e.message : String(e));
+          }
         }),
       },
       "/api/viewed": {

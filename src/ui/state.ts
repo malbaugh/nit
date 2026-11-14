@@ -1,6 +1,6 @@
 import { type FileDiffMetadata, hydratePartialDiff, parsePatchFiles } from "@pierre/diffs";
 import { useSyncExternalStore } from "react";
-import type { Draft, FileContents, Location, ReviewData, Side, Symbol as Sym } from "../types";
+import type { Draft, FileContents, GitHubState, Location, ReviewData, Side, Symbol as Sym } from "../types";
 import { api } from "./api";
 import { type Row, rows } from "./lines";
 import { toasts } from "./toasts";
@@ -52,6 +52,8 @@ type State = {
   outlineOpen: boolean;
   /** The review sheet: every draft by file, before posting. */
   reviewOpen: boolean;
+  /** The pull request and its existing threads; null until the first answer from the server. */
+  github: GitHubState | null;
 };
 
 const stored = (key: string) => {
@@ -89,6 +91,7 @@ let state: State = {
   outlines: {},
   outlineOpen: stored("nit.outline") !== "0",
   reviewOpen: false,
+  github: null,
 };
 
 const listeners = new Set<() => void>();
@@ -301,8 +304,17 @@ export function toast(message: string, undo?: () => void) {
     title: message,
     timeout: 4000,
     actionProps: undo ? { children: "Undo", onClick: () => runUndo() } : undefined,
+    data: { undo: !!undo },
   });
   if (undo) lastUndoToast = id;
+}
+/** A toast with an action button (e.g. "Open" after posting). */
+export function notify(message: string, action?: { label: string; run: () => void }) {
+  toasts.add({
+    title: message,
+    timeout: 6000,
+    actionProps: action ? { children: action.label, onClick: action.run } : undefined,
+  });
 }
 export const canUndo = () => lastUndo !== null;
 function runUndo() {
@@ -544,4 +556,56 @@ export function restoreBackups() {
       persist(d, 0);
     }
   } catch {}
+}
+
+// ---------- GitHub
+
+/** Loads the pull request and its threads without blocking anything else. */
+export async function loadGitHub(fresh = false) {
+  try {
+    set({ github: await api.github(fresh) });
+  } catch {
+    // The server is unreachable; local review keeps working.
+  }
+}
+
+/** Resolve or reopen a thread: the screen changes at once, and changes back if GitHub refuses. */
+export async function setThreadResolved(id: string, resolved: boolean) {
+  const flip = (to: boolean) =>
+    set((s) =>
+      s.github?.status === "ready"
+        ? { github: { ...s.github, threads: s.github.threads.map((t) => (t.id === id ? { ...t, resolved: to } : t)) } }
+        : {},
+    );
+  flip(resolved);
+  try {
+    await api.resolveThread(id, resolved);
+  } catch (e) {
+    flip(!resolved);
+    toast(e instanceof Error ? e.message : "GitHub didn't accept that.");
+  }
+}
+
+/** Starts (or reopens) a reply draft on an existing thread. It posts with the review. */
+export function replyTo(threadId: string) {
+  const gh = state.github;
+  const thread = gh?.status === "ready" ? gh.threads.find((t) => t.id === threadId) : undefined;
+  if (!thread) return;
+  const existing = state.drafts.find((d) => d.replyTo === threadId);
+  if (existing) return set({ editing: existing.id, focused: existing.id });
+  const now = Date.now();
+  const draft: Draft = {
+    id: crypto.randomUUID(),
+    path: thread.path,
+    side: thread.side,
+    start: thread.startLine ?? thread.line ?? 0,
+    end: thread.line ?? 0,
+    body: "",
+    suggestion: null,
+    anchor: [],
+    replyTo: threadId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  set((s) => ({ drafts: [...s.drafts, draft], editing: draft.id, focused: draft.id }));
 }

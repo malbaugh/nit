@@ -21,16 +21,43 @@ export async function currentBranch(root: string) {
   return name === "HEAD" ? await out($`git rev-parse --short HEAD`.cwd(root)) : name;
 }
 
-/** Same repo across clones and worktrees: the normalised origin URL, else the first commit. */
+export type Repo = { host: string; owner: string; name: string };
+
+/**
+ * owner/name from an origin URL in any form git accepts: git@host:o/r.git, https://host/o/r,
+ * ssh://git@host:port/o/r. GitHub's SSH-over-443 host (ssh.github.com) means github.com.
+ */
+export function parseRemote(url: string): Repo | null {
+  const u = url.trim().replace(/^git\+/, "");
+  let host: string;
+  let path: string;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(u)) {
+    try {
+      const parsed = new URL(u);
+      host = parsed.hostname;
+      path = parsed.pathname;
+    } catch {
+      return null;
+    }
+  } else {
+    const scp = u.match(/^(?:[^@/]+@)?([^/:]+):(.+)$/);
+    if (!scp) return null;
+    [, host, path] = scp;
+  }
+  const [owner, name] = path
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/, "")
+    .split("/");
+  if (!owner || !name) return null;
+  host = host.toLowerCase();
+  return { host: host === "ssh.github.com" ? "github.com" : host, owner, name };
+}
+
+/** Same repo across clones and worktrees: the origin's host/owner/name, else the first commit. */
 export async function projectId(root: string) {
-  const origin = await out($`git remote get-url origin`.cwd(root));
-  const key = origin
-    ? origin
-        .replace(/^[a-z+]+:\/\//i, "")
-        .replace(/^[^@/]+@/, "")
-        .replace(/:(?!\d)/, "/")
-        .replace(/\.git$/, "")
-        .toLowerCase()
+  const remote = parseRemote(await out($`git remote get-url origin`.cwd(root)));
+  const key = remote
+    ? `${remote.host}/${remote.owner}/${remote.name}`.toLowerCase()
     : await out($`git rev-list --max-parents=0 HEAD`.cwd(root));
   return createHash("sha1").update(key).digest("hex").slice(0, 16);
 }

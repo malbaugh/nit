@@ -7,9 +7,10 @@ import { stats } from "./lines";
 import * as nav from "./nav";
 import { PeekAnnotation } from "./Peek";
 import * as st from "./state";
+import { ThreadAnnotation } from "./Threads";
 import { basename, dirname, IconButton, Segmented, Toggle, Tooltip } from "./ui";
 
-type Meta = { id: string } | { peek: true };
+type Meta = { id: string } | { peek: true } | { thread: string };
 
 /** Pierre draws lines inside a shadow root; find the row for one side + line number. */
 function revealLine(side: "additions" | "deletions", line: number) {
@@ -18,7 +19,15 @@ function revealLine(side: "additions" | "deletions", line: number) {
   const rows = [...root.querySelectorAll<HTMLElement>(`[data-line="${line}"]`)];
   const want = side === "additions" ? "addition" : "deletion";
   const el = rows.find((r) => r.dataset.lineType?.includes(want)) ?? rows.find((r) => r.dataset.lineType === "context");
-  el?.scrollIntoView({ block: "nearest" });
+  if (!el) return;
+  // Scroll the diff vertically only; scrollIntoView would also shift a wide split view sideways.
+  const scroller = document.querySelector<HTMLElement>("[data-diff-scroll]");
+  if (!scroller) return;
+  const row = el.getBoundingClientRect();
+  const box = scroller.getBoundingClientRect();
+  const margin = 48;
+  if (row.top < box.top + margin) scroller.scrollTop -= box.top + margin - row.top;
+  else if (row.bottom > box.bottom - margin) scroller.scrollTop += row.bottom - (box.bottom - margin);
 }
 
 // Inside Pierre's shadow root: the cursor row, quiet separators, and the comment gutter button.
@@ -85,6 +94,7 @@ export function DiffPane() {
   );
 
   const peekAt = st.useStore((s) => s.peek?.at);
+  const threads = st.useStore((s) => (s.github?.status === "ready" ? s.github.threads : null));
   const outline = st.useStore((s) => (file ? s.outlines[file.name] : undefined));
   const sidebar = st.useStore((s) => s.sidebar);
 
@@ -94,12 +104,23 @@ export function DiffPane() {
 
   const annotations = useMemo<DiffLineAnnotation<Meta>[]>(() => {
     if (!file) return [];
+    // Replies render inside their thread, not on their own.
     const list: DiffLineAnnotation<Meta>[] = drafts
-      .filter((d) => d.path === file.name)
+      .filter((d) => d.path === file.name && !d.replyTo)
       .map((d) => ({ side: d.side, lineNumber: d.end, metadata: { id: d.id } }));
+    for (const t of threads ?? []) {
+      if (t.path !== file.name) continue;
+      // File-level and outdated threads sit above the first change.
+      const placed = t.line !== null && !t.outdated && t.subject === "line";
+      list.push({
+        side: placed ? t.side : "additions",
+        lineNumber: placed ? (t.line ?? 0) : 0,
+        metadata: { thread: t.id },
+      });
+    }
     if (peekAt) list.push({ side: peekAt.side, lineNumber: peekAt.line, metadata: { peek: true } });
     return list;
-  }, [drafts, file, peekAt]);
+  }, [drafts, file, peekAt, threads]);
 
   const selected = useMemo<SelectedLineRange | null>(() => {
     if (!cursor) return null;
@@ -113,7 +134,13 @@ export function DiffPane() {
 
   const renderAnnotation = useCallback(
     (a: DiffLineAnnotation<Meta>) =>
-      "peek" in a.metadata ? <PeekAnnotation /> : <DraftAnnotation id={a.metadata.id} />,
+      "peek" in a.metadata ? (
+        <PeekAnnotation />
+      ) : "thread" in a.metadata ? (
+        <ThreadAnnotation id={a.metadata.thread} />
+      ) : (
+        <DraftAnnotation id={a.metadata.id} />
+      ),
     [],
   );
 
@@ -185,7 +212,7 @@ export function DiffPane() {
           </Tooltip>
         </div>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div data-diff-scroll className="min-h-0 flex-1 overflow-auto">
         <FileDiff<Meta, undefined>
           key={file.name}
           fileDiff={file}

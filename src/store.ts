@@ -17,6 +17,7 @@ type DraftRow = {
   body: string;
   suggestion: string | null;
   anchor: string;
+  reply_to: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -30,6 +31,7 @@ const toDraft = (r: DraftRow): Draft => ({
   body: r.body,
   suggestion: r.suggestion,
   anchor: JSON.parse(r.anchor),
+  replyTo: r.reply_to,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -51,10 +53,19 @@ export function openStore(review: string) {
     body text not null,
     suggestion text,
     anchor text not null,
+    reply_to text,
     created_at integer not null,
     updated_at integer not null
   )`);
   db.run("create index if not exists draft_review on draft (review)");
+  // Databases created before replies existed get the column added once.
+  if (
+    !db
+      .query<{ name: string }, []>("select name from pragma_table_info('draft')")
+      .all()
+      .some((c) => c.name === "reply_to")
+  )
+    db.run("alter table draft add column reply_to text");
   db.run(`create table if not exists viewed (
     review text not null,
     path text not null,
@@ -64,8 +75,8 @@ export function openStore(review: string) {
   const listDrafts = db.query<DraftRow, [string]>("select * from draft where review = ? order by path, start_line");
   const getDraft = db.query<DraftRow, [string, string]>("select * from draft where review = ? and id = ?");
   const upsert =
-    db.query(`insert into draft (id, review, path, side, start_line, end_line, body, suggestion, anchor, created_at, updated_at)
-    values ($id, $review, $path, $side, $start, $end, $body, $suggestion, $anchor, $createdAt, $updatedAt)
+    db.query(`insert into draft (id, review, path, side, start_line, end_line, body, suggestion, anchor, reply_to, created_at, updated_at)
+    values ($id, $review, $path, $side, $start, $end, $body, $suggestion, $anchor, $replyTo, $createdAt, $updatedAt)
     on conflict (id) do update set body = excluded.body, suggestion = excluded.suggestion,
       start_line = excluded.start_line, end_line = excluded.end_line, side = excluded.side,
       anchor = excluded.anchor, updated_at = excluded.updated_at
@@ -82,7 +93,7 @@ export function openStore(review: string) {
       return row ? toDraft(row) : null;
     },
     saveDraft: (d: Draft) => {
-      upsert.run({ ...d, review, anchor: JSON.stringify(d.anchor) });
+      upsert.run({ ...d, review, anchor: JSON.stringify(d.anchor), replyTo: d.replyTo ?? null });
     },
     deleteDraft: (id: string) => {
       remove.run(review, id);

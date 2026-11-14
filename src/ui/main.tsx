@@ -35,7 +35,7 @@ function Toasts() {
             {t.actionProps ? (
               <Toast.Action className="flex h-6 shrink-0 items-center gap-1.5 rounded-[6px] px-1.5 font-medium text-ink-2 transition-[background-color,color] duration-100 [@media(hover:hover)]:hover:bg-hover-2 [@media(hover:hover)]:hover:text-ink" />
             ) : null}
-            {t.actionProps ? <Kbd k="Mod+z" /> : null}
+            {(t.data as { undo?: boolean } | undefined)?.undo ? <Kbd k="Mod+z" /> : null}
           </Toast.Root>
         ))}
       </Toast.Viewport>
@@ -53,11 +53,19 @@ function App() {
 
   useEffect(() => {
     st.load().then(st.restoreBackups);
+    void st.loadGitHub();
+    // Threads refresh every minute while the tab is visible (and when you come back to it).
+    const poll = setInterval(() => document.visibilityState === "visible" && st.loadGitHub(), 60_000);
     window.addEventListener("keydown", handleKey);
     // Coming back to the tab picks up edits made in the editor or by an agent.
-    const onVisible = () => document.visibilityState === "visible" && st.get().editing === null && st.load();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (st.get().editing === null) void st.load();
+      void st.loadGitHub();
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearInterval(poll);
       window.removeEventListener("keydown", handleKey);
       document.removeEventListener("visibilitychange", onVisible);
     };

@@ -11,6 +11,8 @@ export type Draft = {
   suggestion: string | null;
   /** The commented lines' text when the draft was written, used to re-anchor it later. */
   anchor: string[];
+  /** A reply to an existing GitHub review thread (its id), posted with the review. */
+  replyTo?: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -53,4 +55,49 @@ export type Location = {
   inDiff: boolean;
   /** The line itself was added or changed in this diff. */
   changed: boolean;
+};
+
+export type ThreadComment = {
+  id: string;
+  author: string;
+  avatar: string | null;
+  body: string;
+  createdAt: string;
+  url: string;
+};
+
+/** A review thread already on the pull request. `line` is null for file-level or outdated threads. */
+export type Thread = {
+  id: string;
+  path: string;
+  side: Side;
+  line: number | null;
+  startLine: number | null;
+  subject: "line" | "file";
+  resolved: boolean;
+  outdated: boolean;
+  comments: ThreadComment[];
+};
+
+export type PullRequest = { number: number; title: string; url: string; state: string; headSha: string };
+
+export type GitHubState =
+  | { status: "unavailable"; reason: string }
+  | {
+      status: "ready";
+      pr: PullRequest;
+      viewer: string;
+      threads: Thread[];
+      /** Whether local lines match the PR: same commit and nothing uncommitted. */
+      local: { headSha: string; dirty: boolean };
+    };
+
+export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+export type PostResult = {
+  url: string | null;
+  posted: string[];
+  /** Drafts posted as file comments because their lines aren't in the PR's diff. */
+  asFileComments: string[];
+  failed: { id: string; error: string }[];
 };

@@ -1,11 +1,12 @@
 import { Scroll, Sheet } from "@silk-hq/components";
-import { Copy, EditPencil, Xmark } from "iconoir-react/regular";
-import { useMemo } from "react";
-import type { Draft } from "../types";
+import { Copy, EditPencil, OpenNewWindow, WarningTriangle, Xmark } from "iconoir-react/regular";
+import { useMemo, useState } from "react";
+import type { Draft, ReviewEvent } from "../types";
+import { api } from "./api";
 import { splitLabel } from "./Comments";
 import { draftsAsMarkdown } from "./review";
 import * as st from "./state";
-import { Button, basename, dirname, IconButton, Kbd } from "./ui";
+import { Button, basename, dirname, IconButton, Kbd, TextSegmented } from "./ui";
 
 const labelTone: Record<string, string> = {
   blocking: "bg-red-tint text-red",
@@ -15,7 +16,8 @@ const labelTone: Record<string, string> = {
   praise: "bg-green-tint text-green",
 };
 
-const where = (d: Draft) => (d.start === 0 ? "File" : d.start === d.end ? `L${d.end}` : `L${d.start}–${d.end}`);
+const where = (d: Draft) =>
+  d.replyTo ? "Reply" : d.start === 0 ? "File" : d.start === d.end ? `L${d.end}` : `L${d.start}–${d.end}`;
 
 /** First line of a comment as plain text, for the list. */
 const preview = (body: string) =>
@@ -39,6 +41,12 @@ async function copyAll() {
   }
 }
 
+const VERDICTS: { value: ReviewEvent; label: string }[] = [
+  { value: "COMMENT", label: "Comment" },
+  { value: "APPROVE", label: "Approve" },
+  { value: "REQUEST_CHANGES", label: "Request changes" },
+];
+
 /**
  * Every draft in the review, grouped by file: check your review before it leaves your machine.
  * A Silk sheet from the right (non-commercial licence: nit is a personal open-source tool).
@@ -47,6 +55,42 @@ export function ReviewSheet() {
   const open = st.useStore((s) => s.reviewOpen);
   const drafts = st.useStore((s) => s.drafts);
   const files = st.useStore((s) => s.files);
+  const gh = st.useStore((s) => s.github);
+  const [event, setEvent] = useState<ReviewEvent>("COMMENT");
+  const [summary, setSummary] = useState("");
+  const [posting, setPosting] = useState(false);
+  const pr = gh?.status === "ready" ? gh : null;
+  const behind = pr && (pr.local.dirty || pr.local.headSha !== pr.pr.headSha);
+  const postable = drafts.filter((d) => d.body.trim() || d.suggestion !== null).length;
+
+  async function post() {
+    if (!pr || posting || (!postable && !summary.trim() && event === "COMMENT")) return;
+    setPosting(true);
+    try {
+      const r = await api.postReview(event, summary);
+      await st.load();
+      void st.loadGitHub(true);
+      if (r.failed.length) {
+        st.toast(
+          `${r.failed.length} of ${r.failed.length + r.posted.length} comments didn't post; they're still here.`,
+        );
+      } else {
+        st.set({ reviewOpen: false });
+        setSummary("");
+        setEvent("COMMENT");
+        st.notify(
+          r.asFileComments.length
+            ? `Review posted · ${r.asFileComments.length} as file comments`
+            : `Review posted on #${pr.pr.number}`,
+          r.url ? { label: "Open", run: () => window.open(r.url ?? "", "_blank", "noopener") } : undefined,
+        );
+      }
+    } catch (e) {
+      st.toast(e instanceof Error ? e.message : "Couldn't post the review.");
+    } finally {
+      setPosting(false);
+    }
+  }
 
   const groups = useMemo(() => {
     const order = new Map(files.map((f, i) => [f.name, i]));
@@ -70,9 +114,22 @@ export function ReviewSheet() {
             <header className="flex h-14 shrink-0 items-center gap-3 px-4 shadow-[0_1px_0_var(--line)]">
               <div className="min-w-0 flex-1">
                 <Sheet.Title className="text-[14px] font-medium text-ink">Review</Sheet.Title>
-                <Sheet.Description className="text-[12px] text-ink-3 tabular-nums">
-                  {drafts.length} {drafts.length === 1 ? "comment" : "comments"} in {groups.length}{" "}
-                  {groups.length === 1 ? "file" : "files"}
+                <Sheet.Description className="truncate text-[12px] text-ink-3 tabular-nums">
+                  {pr ? (
+                    <a
+                      href={pr.pr.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex items-center gap-1 hover:text-ink-2"
+                    >
+                      #{pr.pr.number} {pr.pr.title} <OpenNewWindow width={11} height={11} />
+                    </a>
+                  ) : (
+                    <>
+                      {drafts.length} {drafts.length === 1 ? "comment" : "comments"} in {groups.length}{" "}
+                      {groups.length === 1 ? "file" : "files"}
+                    </>
+                  )}
                 </Sheet.Description>
               </div>
               <Kbd k="Esc" quiet />
@@ -81,6 +138,15 @@ export function ReviewSheet() {
               </IconButton>
             </header>
 
+            {behind ? (
+              <div className="flex gap-2 bg-orange-tint px-4 py-2.5 text-[12px] text-ink-2 shadow-[0_1px_0_var(--line)]">
+                <WarningTriangle width={14} height={14} className="mt-px shrink-0 text-orange" />
+                <span>
+                  {pr?.local.dirty ? "You have uncommitted changes" : "Your branch isn't at the PR's latest commit"}.
+                  Comments on lines GitHub can't find post as file comments that name the line.
+                </span>
+              </div>
+            ) : null}
             <Scroll.Root className="min-h-0 flex-1">
               <Scroll.View className="h-full w-full">
                 <Scroll.Content className="box-border w-full min-w-0 p-2">
@@ -141,14 +207,56 @@ export function ReviewSheet() {
               </Scroll.View>
             </Scroll.Root>
 
-            <footer className="flex h-14 shrink-0 items-center gap-3 bg-inset px-4 shadow-[0_-1px_0_var(--line)]">
-              <span className="flex items-center gap-1.5 text-[11.5px] text-ink-3">
-                <Kbd k="Mod+Shift+Enter" quiet /> toggles this
-              </span>
-              <Button tone="primary" className="ml-auto" onClick={copyAll} disabled={!drafts.length}>
-                <Copy width={14} height={14} /> Copy as Markdown
-              </Button>
-            </footer>
+            {pr ? (
+              // biome-ignore lint/a11y/noStaticElementInteractions: ⌘↵ posts from anywhere in the footer
+              <footer
+                className="shrink-0 space-y-2.5 bg-inset px-4 pt-3 pb-3.5 shadow-[0_-1px_0_var(--line)]"
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    void post();
+                  }
+                }}
+              >
+                <textarea
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                  placeholder="Leave a summary (optional)"
+                  aria-label="Review summary"
+                  rows={2}
+                  className="block w-full resize-none rounded-control bg-field px-3 py-2 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--line)] outline-none placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_var(--accent),0_0_0_3px_var(--accent-tint)]"
+                />
+                <div className="flex items-center gap-2">
+                  <TextSegmented label="Verdict" value={event} onChange={setEvent} options={VERDICTS} />
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <IconButton label="Copy as Markdown" onClick={copyAll} side="top">
+                      <Copy />
+                    </IconButton>
+                    <Button
+                      tone="primary"
+                      onClick={() => void post()}
+                      disabled={posting || (!postable && !summary.trim() && event === "COMMENT")}
+                    >
+                      {posting ? "Posting…" : postable ? `Post ${postable}` : "Post"}{" "}
+                      <span className="opacity-70">⌘↵</span>
+                    </Button>
+                  </span>
+                </div>
+              </footer>
+            ) : (
+              <footer className="flex h-14 shrink-0 items-center gap-3 bg-inset px-4 shadow-[0_-1px_0_var(--line)]">
+                <span
+                  className="min-w-0 flex-1 truncate text-[11.5px] text-ink-3"
+                  title={gh?.status === "unavailable" ? gh.reason : ""}
+                >
+                  {gh?.status === "unavailable" ? gh.reason : "Looking for the pull request…"}
+                </span>
+                <Button tone="primary" onClick={copyAll} disabled={!drafts.length}>
+                  <Copy width={14} height={14} /> Copy as Markdown
+                </Button>
+              </footer>
+            )}
           </Sheet.Content>
         </Sheet.View>
       </Sheet.Portal>

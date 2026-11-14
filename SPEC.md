@@ -198,6 +198,15 @@ built-in Agent SDK run.
 
 ## Stack
 
+GitHub goes through Octokit, GitHub's official SDK (REST plus typed GraphQL), signed in
+with the GitHub CLI's token or `GH_TOKEN`. The PR and its threads load in the background
+and are cached for 30 seconds, so the diff never waits on the network. Replies and resolves
+update the screen at once and roll back if GitHub refuses. Posting creates a pending review
+(or reuses yours), adds a thread or reply per draft four at a time, then submits with the
+verdict. A line GitHub can't place becomes a file comment naming the line, and only drafts
+GitHub confirmed are deleted locally. Comments render GitHub's safe HTML subset through
+`rehype-sanitize`.
+
 Bun server (`Bun.serve`, HTML imports bundle the UI), React, `@pierre/diffs`,
 `@anthropic-ai/claude-agent-sdk`, `@ff-labs/fff-bun`, `web-tree-sitter`, and `gh`
 for GitHub.
@@ -220,7 +229,7 @@ Three phases. Each ends in something you can use every day.
    comments (drafts saved as you type, ranges, suggestions applied locally,
    labels, jump between comments), plus the `⌘K` palette. State lives in
    SQLite.
-2. **Hand off.** Post to GitHub (submit dialog, existing threads with reply and
+2. **Hand off.** **(GitHub and PR checkout built; agent apply next)** Post to GitHub (submit dialog, existing threads with reply and
    resolve), `nit <pr>` with config and the `checkout` and `editor` plug
    points, and Apply with the Agent SDK (snapshots, undo, changes since last
    review).

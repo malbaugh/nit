@@ -1,5 +1,7 @@
 import { memo, useRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { CodeBlock, langFor } from "./Code";
 
@@ -24,9 +26,13 @@ type HastNode = {
 const hastText = (n: HastNode): string =>
   n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(hastText).join("");
 
+// GitHub renders a safe subset of HTML in comments (details, img, sup, kbd…). rehype-raw parses
+// it and rehype-sanitize keeps only what GitHub's own sanitizer allows; scripts, styles, event
+// handlers and HTML comments are dropped.
+const REHYPE = [rehypeRaw, rehypeSanitize];
+
 /**
- * GitHub-flavoured Markdown: tables, task lists, strikethrough and autolinks. Raw HTML is
- * not rendered and unsafe URLs are dropped (react-markdown's defaults).
+ * GitHub-flavoured Markdown: tables, task lists, strikethrough, autolinks and GitHub's safe HTML.
  */
 export const Markdown = memo(function Markdown({
   source,
@@ -76,7 +82,7 @@ export const Markdown = memo(function Markdown({
 
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={REHYPE} components={components}>
         {source}
       </ReactMarkdown>
     </div>

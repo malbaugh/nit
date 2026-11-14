@@ -304,6 +304,26 @@ diffs-container {
   font-weight: 600;
   background: var(--inset);
 }
+.md details {
+  border-radius: var(--radius-control);
+  box-shadow: 0 0 0 1px var(--line);
+  padding: 6px 10px;
+}
+.md summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.md details[open] > summary {
+  margin-bottom: 6px;
+}
+.md kbd {
+  font: 11px var(--font-mono);
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--hover);
+  box-shadow: 0 0 0 1px var(--line);
+}
 .md img {
   max-width: 100%;
   border-radius: var(--radius-control);
